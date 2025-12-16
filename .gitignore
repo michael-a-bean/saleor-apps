@@ -1,46 +1,6 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
-# dependencies
-node_modules
-.pnp
-.pnp.js
-.pnpm-store
-
-# testing
-coverage/
-
-# next.js
-.next/
-out/
-build
-
-# editors
-.idea/
-.vscode/*
-!.vscode/mcp.json
-.cursor/*
-!.cursor/mcp.json
-
-# logs / cache
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
-.eslintcache
-.sentryclirc
-.cspellcache
-*.tsbuildinfo
-.turbo
-
-# env files
-.env
-.env.test
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-# misc
-.saleor-app-auth.json
-.DS_Store
-*.pem
+# Ignore everything in saleor-apps monorepo except custom apps tracked as submodules
+/*
+!/.gitignore
+!/apps
+/apps/*
+!/apps/inventory-ops

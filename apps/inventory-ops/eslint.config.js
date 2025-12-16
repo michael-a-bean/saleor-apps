@@ -6,12 +6,13 @@ export default [
   ...config,
   {
     name: "saleor-app-inventory-ops/custom-config",
-    files: ["**/*.ts"],
+    files: ["**/*.ts", "**/*.tsx"],
     plugins: {
       n: nodePlugin,
     },
     rules: {
       "n/no-process-env": "error",
+      "padding-line-between-statements": "off",
     },
   },
   {

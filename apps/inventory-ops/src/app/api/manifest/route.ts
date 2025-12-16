@@ -19,7 +19,7 @@ const handler = createManifestHandler({
       author: "Saleor Commerce",
       brand: {
         logo: {
-          default: `${apiBaseUrl}/logo.png`,
+          default: `${iframeBaseUrl}/logo.png`,
         },
       },
       dataPrivacyUrl: "https://saleor.io/legal/privacy/",

@@ -10,16 +10,14 @@ import { ThemeSynchronizer } from "@saleor/apps-shared/theme-synchronizer";
 import { Box, ThemeProvider } from "@saleor/macaw-ui";
 import { AppProps } from "next/app";
 
-import { setAppBridgeInstance, trpcClient } from "@/modules/trpc/trpc-client";
+import { trpcClient } from "@/modules/trpc/trpc-client";
+import { AppLayout } from "@/ui/components/app-layout";
 
 /**
  * Ensure instance is a singleton.
+ * TODO: This is React 18 issue, consider hiding this workaround inside app-sdk
  */
 export const appBridgeInstance = typeof window !== "undefined" ? new AppBridge() : undefined;
-
-if (appBridgeInstance) {
-  setAppBridgeInstance(appBridgeInstance);
-}
 
 function NextApp({ Component, pageProps }: AppProps) {
   return (
@@ -30,10 +28,13 @@ function NextApp({ Component, pageProps }: AppProps) {
             "/",
             "/suppliers",
             "/suppliers/new",
+            "/suppliers/[id]",
             "/purchase-orders",
             "/purchase-orders/new",
+            "/purchase-orders/[id]",
             "/goods-receipts",
             "/goods-receipts/new",
+            "/goods-receipts/[id]",
           ]}
           fallback={<IframeProtectedFallback appName="Inventory Ops" />}
         >
@@ -41,8 +42,10 @@ function NextApp({ Component, pageProps }: AppProps) {
             <GraphQLProvider>
               <ThemeSynchronizer />
               <RoutePropagator />
-              <Box padding={10}>
-                <Component {...pageProps} />
+              <Box padding={6}>
+                <AppLayout>
+                  <Component {...pageProps} />
+                </AppLayout>
               </Box>
             </GraphQLProvider>
           </AppBridgeProvider>

@@ -9,13 +9,20 @@ const booleanSchema = z
   .refine((s) => s === "true" || s === "false")
   .transform((s) => s === "true");
 
+// Check if we're in a build environment (CI, Docker build, etc.)
+const isBuilding = process.env.SKIP_ENV_VALIDATION === "true" ||
+  process.env.CI === "true" ||
+  process.env.DOCKER_BUILD === "true" ||
+  // Next.js sets this during build
+  process.env.NEXT_PHASE === "phase-production-build";
+
 export const env = createEnv({
   client: {
     NEXT_PUBLIC_SENTRY_DSN: z.string().optional(),
   },
   server: {
-    // Database
-    DATABASE_URL: z.string().url(),
+    // Database - optional during build
+    DATABASE_URL: isBuilding ? z.string().optional() : z.string().url(),
 
     // App configuration
     ALLOWED_DOMAIN_PATTERN: z.string().optional(),
@@ -26,8 +33,8 @@ export const env = createEnv({
     MANIFEST_APP_ID: z.string().optional().default("saleor.app.inventory-ops"),
     APP_NAME: z.string().optional().default("Inventory Ops"),
 
-    // Security
-    SECRET_KEY: z.string().min(32),
+    // Security - optional during build
+    SECRET_KEY: isBuilding ? z.string().optional() : z.string().min(32),
 
     // Observability
     OTEL_ACCESS_TOKEN: z.string().optional(),

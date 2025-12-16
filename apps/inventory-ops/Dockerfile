@@ -33,7 +33,6 @@ ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable
 
 # Skip env validation during build - real values come from runtime env
-ENV SKIP_ENV_VALIDATION=true
 
 COPY --from=deps /app ./
 
@@ -41,6 +40,7 @@ COPY --from=deps /app ./
 RUN cd apps/inventory-ops && pnpm prisma generate
 
 # Build the app and its dependencies
+ENV SKIP_ENV_VALIDATION=true
 RUN pnpm turbo run build --filter=saleor-app-inventory-ops
 
 # Production stage

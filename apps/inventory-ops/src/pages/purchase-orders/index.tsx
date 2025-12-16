@@ -7,7 +7,8 @@ import { trpcClient } from "@/modules/trpc/trpc-client";
 
 const PurchaseOrdersPage: NextPage = () => {
   const router = useRouter();
-  const { data: purchaseOrders, isLoading, error } = trpcClient.purchaseOrders.list.useQuery();
+  const { data, isLoading, error } = trpcClient.purchaseOrders.list.useQuery();
+  const purchaseOrders = data?.purchaseOrders;
 
   if (error) {
     return (

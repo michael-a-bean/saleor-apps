@@ -4,6 +4,7 @@
   "globalEnv": [
     "APP_LOG_LEVEL",
     "CI",
+    "SKIP_ENV_VALIDATION",
     "ENABLE_EXPERIMENTAL_COREPACK",
     "ENV",
     "GITHUB_SHA",

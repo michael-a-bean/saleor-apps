@@ -33,12 +33,24 @@ This worker fetches current market prices and stores them in `SellPriceSnapshot`
 
 ## Commands
 
-### Full Sync
+### Seed Sync (Bootstrap)
 
-Downloads Scryfall bulk data (~80MB) and updates all matching variants.
+Downloads Scryfall bulk data (~80MB) and creates initial SellPriceSnapshot records for all NM variants. Run once to bootstrap pricing data.
 
 ```bash
-pnpm sync:full
+# Via Docker (recommended)
+docker compose --profile tools run --rm price-sync node dist/index.mjs seed
+
+# Dry run first
+docker compose --profile tools run --rm price-sync node dist/index.mjs seed --dry-run --limit 100
+```
+
+### Full Sync
+
+Updates prices for all variants with existing snapshots from Scryfall bulk data.
+
+```bash
+docker compose --profile tools run --rm price-sync node dist/index.mjs full
 ```
 
 **Recommended**: Run daily at 2-3am when API usage is low.
@@ -48,8 +60,8 @@ pnpm sync:full
 Updates prices for recently active variants (used in buylists, cost events, or with stale prices).
 
 ```bash
-pnpm sync:delta
-pnpm sync:delta -- --lookback 3 --limit 200 --min-age 2
+docker compose --profile tools run --rm price-sync node dist/index.mjs delta
+docker compose --profile tools run --rm price-sync node dist/index.mjs delta --lookback 3 --limit 200 --min-age 2
 ```
 
 Options:
@@ -64,7 +76,7 @@ Options:
 Sync price for a specific variant by ID.
 
 ```bash
-pnpm sync:variant <saleor-variant-id>
+docker compose --profile tools run --rm price-sync node dist/index.mjs variant <saleor-variant-id>
 ```
 
 ## Setup
@@ -96,11 +108,12 @@ pnpm db:generate
 ### 4. Run sync
 
 ```bash
-# Development
-pnpm sync:delta
+# Via Docker (recommended)
+docker compose --profile tools run --rm price-sync node dist/index.mjs seed  # First time
+docker compose --profile tools run --rm price-sync node dist/index.mjs delta # Ongoing
 
-# Production (via Docker)
-docker compose run --rm price-sync node dist/index.js delta
+# Local development
+pnpm sync:delta
 ```
 
 ## Scheduling
@@ -117,37 +130,24 @@ docker compose run --rm price-sync node dist/index.js delta
 
 ### Using Docker Compose
 
-Add to your docker-compose.yml:
+The price-sync service is already configured in docker-compose.yml with the `tools` profile:
 
-```yaml
-services:
-  price-sync-full:
-    build: ./saleor-apps/apps/price-sync
-    command: ["node", "dist/index.js", "full"]
-    environment:
-      - DATABASE_URL=postgresql://saleor:saleor@db:5432/saleor
-      - INSTALLATION_ID=${INSTALLATION_ID}
-    depends_on:
-      - db
-    profiles:
-      - cron
+```bash
+# Full sync daily
+docker compose --profile tools run --rm price-sync node dist/index.mjs full
 
-  price-sync-delta:
-    build: ./saleor-apps/apps/price-sync
-    command: ["node", "dist/index.js", "delta"]
-    environment:
-      - DATABASE_URL=postgresql://saleor:saleor@db:5432/saleor
-      - INSTALLATION_ID=${INSTALLATION_ID}
-    depends_on:
-      - db
-    profiles:
-      - cron
+# Delta sync hourly
+docker compose --profile tools run --rm price-sync node dist/index.mjs delta
 ```
 
-Run with:
-```bash
-docker compose --profile cron run --rm price-sync-full
-docker compose --profile cron run --rm price-sync-delta
+For automated scheduling, add cron entries on the Docker host:
+
+```cron
+# Full sync daily at 2am
+0 2 * * * cd /path/to/saleor-platform && docker compose --profile tools run --rm price-sync node dist/index.mjs full >> /var/log/price-sync.log 2>&1
+
+# Delta sync every 2 hours
+0 */2 * * * cd /path/to/saleor-platform && docker compose --profile tools run --rm price-sync node dist/index.mjs delta >> /var/log/price-sync.log 2>&1
 ```
 
 ## Rate Limits

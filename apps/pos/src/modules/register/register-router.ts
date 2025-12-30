@@ -47,16 +47,16 @@ function calculateDenominationTotal(breakdown: DenominationBreakdown): number {
 }
 
 const openSessionSchema = z.object({
-  registerName: z.string().min(1).max(100).default("Main Register"),
+  registerCode: z.string().min(1).max(50).default("REG-1"),
+  saleorWarehouseId: z.string().min(1),
   openingFloat: denominationBreakdownSchema,
-  openedByName: z.string().min(1).max(255),
+  currency: z.string().length(3).default("USD"),
   notes: z.string().max(500).optional().nullable(),
 });
 
 const closeSessionSchema = z.object({
   sessionId: z.string().uuid(),
   closingCount: denominationBreakdownSchema,
-  closedByName: z.string().min(1).max(255),
   notes: z.string().max(500).optional().nullable(),
 });
 
@@ -67,6 +67,27 @@ const listSessionsSchema = z.object({
   startDate: z.date().optional(),
   endDate: z.date().optional(),
 });
+
+/**
+ * Generate session number for the day
+ */
+async function generateSessionNumber(
+  prisma: typeof import("@prisma/client").PrismaClient.prototype,
+  installationId: string
+): Promise<string> {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const count = await prisma.registerSession.count({
+    where: {
+      installationId,
+      openedAt: { gte: today },
+    },
+  });
+
+  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  return `${dateStr}-${String(count + 1).padStart(3, "0")}`;
+}
 
 /**
  * Register Session Router
@@ -113,17 +134,20 @@ export const registerRouter = router({
     }
 
     const openingAmount = calculateDenominationTotal(input.openingFloat);
+    const sessionNumber = await generateSessionNumber(ctx.prisma, ctx.installationId);
 
     // Create the session
     const session = await ctx.prisma.registerSession.create({
       data: {
         installationId: ctx.installationId,
-        registerName: input.registerName,
+        registerCode: input.registerCode,
+        sessionNumber,
+        saleorWarehouseId: input.saleorWarehouseId,
         status: "OPEN",
         openingFloat: openingAmount,
         openingDenominations: input.openingFloat,
-        openedBy: ctx.token ?? null,
-        openedByName: input.openedByName,
+        openedBy: ctx.token ?? "unknown",
+        currency: input.currency,
         notes: input.notes,
       },
     });
@@ -131,12 +155,12 @@ export const registerRouter = router({
     // Create the opening float cash movement
     await ctx.prisma.cashMovement.create({
       data: {
-        sessionId: session.id,
+        registerSessionId: session.id,
         movementType: "OPENING_FLOAT",
         amount: openingAmount,
+        currency: input.currency,
         denominations: input.openingFloat,
-        performedBy: ctx.token ?? null,
-        performedByName: input.openedByName,
+        performedBy: ctx.token ?? "unknown",
         notes: "Opening float",
       },
     });
@@ -145,20 +169,21 @@ export const registerRouter = router({
     await ctx.prisma.posAuditEvent.create({
       data: {
         installationId: ctx.installationId,
-        sessionId: session.id,
-        eventType: "REGISTER_OPENED",
-        performedBy: ctx.token ?? null,
-        performedByName: input.openedByName,
-        details: {
+        entityType: "RegisterSession",
+        entityId: session.id,
+        action: "OPENED",
+        userId: ctx.token ?? null,
+        metadata: {
           openingFloat: openingAmount,
           denominations: input.openingFloat,
+          registerCode: input.registerCode,
         },
       },
     });
 
     logger.info("Register session opened", {
       sessionId: session.id,
-      registerName: session.registerName,
+      registerCode: session.registerCode,
       openingFloat: openingAmount,
     });
 
@@ -200,7 +225,7 @@ export const registerRouter = router({
     // Check for pending transactions
     const pendingTx = await ctx.prisma.posTransaction.findFirst({
       where: {
-        sessionId: session.id,
+        registerSessionId: session.id,
         status: { in: ["DRAFT", "SUSPENDED"] },
       },
     });
@@ -212,7 +237,7 @@ export const registerRouter = router({
       });
     }
 
-    const closingCount = calculateDenominationTotal(input.closingCount);
+    const closingCash = calculateDenominationTotal(input.closingCount);
 
     // Calculate expected cash: opening + cash sales - cash returns - drops - payouts
     let expectedCash = session.openingFloat.toNumber();
@@ -226,14 +251,14 @@ export const registerRouter = router({
         case "RETURN_CASH":
         case "CASH_DROP":
         case "PAYOUT":
-          expectedCash -= movement.amount.toNumber();
+          expectedCash -= Math.abs(movement.amount.toNumber());
           break;
         // OPENING_FLOAT is already counted
         // CLOSING_COUNT is what we're calculating variance against
       }
     }
 
-    const variance = closingCount - expectedCash;
+    const variance = closingCash - expectedCash;
 
     // Update the session
     const updatedSession = await ctx.prisma.registerSession.update({
@@ -241,12 +266,11 @@ export const registerRouter = router({
       data: {
         status: "CLOSED",
         closedAt: new Date(),
-        closingCount,
+        closingCash,
         closingDenominations: input.closingCount,
         expectedCash,
         variance,
         closedBy: ctx.token ?? null,
-        closedByName: input.closedByName,
         notes: input.notes
           ? session.notes
             ? `${session.notes}\n---\nClose notes: ${input.notes}`
@@ -258,12 +282,12 @@ export const registerRouter = router({
     // Create closing count cash movement
     await ctx.prisma.cashMovement.create({
       data: {
-        sessionId: session.id,
+        registerSessionId: session.id,
         movementType: "CLOSING_COUNT",
-        amount: closingCount,
+        amount: closingCash,
+        currency: session.currency,
         denominations: input.closingCount,
-        performedBy: ctx.token ?? null,
-        performedByName: input.closedByName,
+        performedBy: ctx.token ?? "unknown",
         notes: `Expected: ${expectedCash.toFixed(2)}, Variance: ${variance.toFixed(2)}`,
       },
     });
@@ -272,12 +296,12 @@ export const registerRouter = router({
     await ctx.prisma.posAuditEvent.create({
       data: {
         installationId: ctx.installationId,
-        sessionId: session.id,
-        eventType: "REGISTER_CLOSED",
-        performedBy: ctx.token ?? null,
-        performedByName: input.closedByName,
-        details: {
-          closingCount,
+        entityType: "RegisterSession",
+        entityId: session.id,
+        action: "CLOSED",
+        userId: ctx.token ?? null,
+        metadata: {
+          closingCash,
           expectedCash,
           variance,
           denominations: input.closingCount,
@@ -287,7 +311,7 @@ export const registerRouter = router({
 
     logger.info("Register session closed", {
       sessionId: session.id,
-      closingCount,
+      closingCash,
       expectedCash,
       variance,
     });
@@ -296,7 +320,7 @@ export const registerRouter = router({
       session: updatedSession,
       summary: {
         openingFloat: session.openingFloat.toNumber(),
-        closingCount,
+        closingCash,
         expectedCash,
         variance,
         transactionCount: session.transactions.length,
@@ -344,10 +368,11 @@ export const registerRouter = router({
       await ctx.prisma.posAuditEvent.create({
         data: {
           installationId: ctx.installationId,
-          sessionId: session.id,
-          eventType: "REGISTER_SUSPENDED",
-          performedBy: ctx.token ?? null,
-          details: { reason: input.reason },
+          entityType: "RegisterSession",
+          entityId: session.id,
+          action: "SUSPENDED",
+          userId: ctx.token ?? null,
+          metadata: { reason: input.reason },
         },
       });
 
@@ -361,7 +386,6 @@ export const registerRouter = router({
     .input(
       z.object({
         sessionId: z.string().uuid(),
-        resumedByName: z.string().min(1).max(255),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -394,10 +418,10 @@ export const registerRouter = router({
       await ctx.prisma.posAuditEvent.create({
         data: {
           installationId: ctx.installationId,
-          sessionId: session.id,
-          eventType: "REGISTER_RESUMED",
-          performedBy: ctx.token ?? null,
-          performedByName: input.resumedByName,
+          entityType: "RegisterSession",
+          entityId: session.id,
+          action: "RESUMED",
+          userId: ctx.token ?? null,
         },
       });
 
@@ -417,10 +441,10 @@ export const registerRouter = router({
         },
         include: {
           cashMovements: {
-            orderBy: { createdAt: "asc" },
+            orderBy: { performedAt: "asc" },
           },
           transactions: {
-            orderBy: { createdAt: "desc" },
+            orderBy: { startedAt: "desc" },
             take: 100, // Limit to last 100 transactions
             include: {
               payments: true,
@@ -504,7 +528,7 @@ export const registerRouter = router({
     let totalPaidIn = 0;
 
     for (const movement of session.cashMovements) {
-      const amount = movement.amount.toNumber();
+      const amount = Math.abs(movement.amount.toNumber());
 
       switch (movement.movementType) {
         case "SALE_CASH":

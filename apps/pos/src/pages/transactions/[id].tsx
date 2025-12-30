@@ -59,7 +59,7 @@ const TransactionDetailPage: NextPage = () => {
               {transaction.transactionNumber}
             </Text>
             <Text size={3} color="default2">
-              {formatType(transaction.type)} - {transaction.status}
+              {formatType(transaction.transactionType)} - {transaction.status}
             </Text>
           </Box>
         </Box>
@@ -103,14 +103,14 @@ const TransactionDetailPage: NextPage = () => {
                 <Text size={2} color="default2">
                   Register
                 </Text>
-                <Text size={3}>{transaction.session?.registerName ?? "Unknown"}</Text>
+                <Text size={3}>{transaction.registerSession?.registerCode ?? "Unknown"}</Text>
               </Box>
-              {transaction.completedByName && (
+              {transaction.completedBy && (
                 <Box>
                   <Text size={2} color="default2">
                     Completed By
                   </Text>
-                  <Text size={3}>{transaction.completedByName}</Text>
+                  <Text size={3}>{transaction.completedBy}</Text>
                 </Box>
               )}
               {transaction.saleorOrderId && (
@@ -171,17 +171,16 @@ const TransactionDetailPage: NextPage = () => {
                   padding={2}
                   borderBottomWidth={1}
                   borderBottomStyle="solid"
-                  borderBottomColor="default1"
+                  borderColor="default1"
                 >
                   <Box>
-                    <Text size={3}>{line.productName}</Text>
+                    <Text size={3}>{line.saleorVariantName ?? "Unknown Item"}</Text>
                     <Text size={2} color="default2">
-                      {line.variantName}
-                      {line.sku && ` (${line.sku})`}
+                      {line.saleorVariantSku && `SKU: ${line.saleorVariantSku}`}
                     </Text>
-                    {line.discountAmount > 0 && (
+                    {Number(line.lineDiscountAmount) > 0 && (
                       <Text size={1} color="success1">
-                        Discount: -${line.discountAmount.toFixed(2)}
+                        Discount: -${Number(line.lineDiscountAmount).toFixed(2)}
                       </Text>
                     )}
                   </Box>
@@ -189,10 +188,10 @@ const TransactionDetailPage: NextPage = () => {
                     {line.quantity}
                   </Text>
                   <Text size={3} textAlign="right">
-                    ${line.unitPrice.toFixed(2)}
+                    ${Number(line.unitPrice).toFixed(2)}
                   </Text>
                   <Text size={3} textAlign="right" fontWeight="bold">
-                    ${line.lineTotal.toFixed(2)}
+                    ${Number(line.lineTotal).toFixed(2)}
                   </Text>
                 </Box>
               ))}
@@ -217,19 +216,19 @@ const TransactionDetailPage: NextPage = () => {
             <Box display="flex" flexDirection="column" gap={2}>
               <Box display="flex" justifyContent="space-between">
                 <Text size={3}>Subtotal</Text>
-                <Text size={3}>${transaction.subtotal.toFixed(2)}</Text>
+                <Text size={3}>${Number(transaction.subtotal).toFixed(2)}</Text>
               </Box>
-              {transaction.discountTotal > 0 && (
+              {Number(transaction.totalDiscount) > 0 && (
                 <Box display="flex" justifyContent="space-between">
                   <Text size={3}>Discount</Text>
                   <Text size={3} color="success1">
-                    -${transaction.discountTotal.toFixed(2)}
+                    -${Number(transaction.totalDiscount).toFixed(2)}
                   </Text>
                 </Box>
               )}
               <Box display="flex" justifyContent="space-between">
                 <Text size={3}>Tax</Text>
-                <Text size={3}>${transaction.taxTotal.toFixed(2)}</Text>
+                <Text size={3}>${Number(transaction.totalTax).toFixed(2)}</Text>
               </Box>
               <Box
                 display="flex"
@@ -237,13 +236,13 @@ const TransactionDetailPage: NextPage = () => {
                 paddingTop={2}
                 borderTopWidth={1}
                 borderTopStyle="solid"
-                borderTopColor="default1"
+                borderColor="default1"
               >
                 <Text size={5} fontWeight="bold">
                   Total
                 </Text>
                 <Text size={5} fontWeight="bold">
-                  ${transaction.total.toFixed(2)}
+                  ${Number(transaction.grandTotal).toFixed(2)}
                 </Text>
               </Box>
             </Box>
@@ -271,14 +270,14 @@ const TransactionDetailPage: NextPage = () => {
                     alignItems="center"
                   >
                     <Box>
-                      <Text size={3}>{formatPaymentMethod(payment.paymentMethod)}</Text>
-                      {payment.reference && (
+                      <Text size={3}>{formatPaymentMethod(payment.methodType)}</Text>
+                      {payment.referenceNumber && (
                         <Text size={1} color="default2">
-                          Ref: {payment.reference}
+                          Ref: {payment.referenceNumber}
                         </Text>
                       )}
                     </Box>
-                    <Text size={3}>${payment.amount.toFixed(2)}</Text>
+                    <Text size={3}>${Number(payment.amount).toFixed(2)}</Text>
                   </Box>
                 ))}
 
@@ -289,7 +288,7 @@ const TransactionDetailPage: NextPage = () => {
                     paddingTop={2}
                     borderTopWidth={1}
                     borderTopStyle="solid"
-                    borderTopColor="default1"
+                    borderColor="default1"
                   >
                     <Text size={3}>Change Given</Text>
                     <Text size={3}>${paymentSummary.changeGiven.toFixed(2)}</Text>

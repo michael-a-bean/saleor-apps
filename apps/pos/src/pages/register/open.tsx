@@ -35,8 +35,10 @@ const RegisterOpenPage: NextPage = () => {
   const router = useRouter();
   const utils = trpcClient.useUtils();
 
-  const [registerName, setRegisterName] = useState("Main Register");
+  const [registerCode, setRegisterCode] = useState("REG-1");
   const [openedByName, setOpenedByName] = useState("");
+  // TODO: Replace with actual warehouse selector
+  const saleorWarehouseId = "V2FyZWhvdXNlOjg1YTg0MmMwLTk4NjQtNDlkZi1iMDg5LTg1ZGU2Y2ZlYzY3Yg==";
   const [notes, setNotes] = useState("");
   const [denominations, setDenominations] = useState<DenominationCounts>(defaultDenominations);
 
@@ -79,9 +81,9 @@ const RegisterOpenPage: NextPage = () => {
     }
 
     openMutation.mutate({
-      registerName,
-      openedByName: openedByName.trim(),
-      notes: notes.trim() || undefined,
+      registerCode,
+      saleorWarehouseId,
+      notes: notes.trim() ? `Opened by: ${openedByName.trim()}\n${notes.trim()}` : `Opened by: ${openedByName.trim()}`,
       openingFloat: denominations,
     });
   };
@@ -115,11 +117,11 @@ const RegisterOpenPage: NextPage = () => {
           <Box display="flex" flexDirection="column" gap={3}>
             <Box>
               <Text size={2} marginBottom={1}>
-                Register Name
+                Register Code
               </Text>
               <Input
-                value={registerName}
-                onChange={(e) => setRegisterName(e.target.value)}
+                value={registerCode}
+                onChange={(e) => setRegisterCode(e.target.value)}
                 size="medium"
               />
             </Box>
@@ -259,9 +261,9 @@ const RegisterOpenPage: NextPage = () => {
             onClick={handleSubmit}
             variant="primary"
             size="large"
-            disabled={openMutation.isPending || !openedByName.trim()}
+            disabled={openMutation.isLoading || !openedByName.trim()}
           >
-            {openMutation.isPending ? "Opening..." : "Open Register"}
+            {openMutation.isLoading ? "Opening..." : "Open Register"}
           </Button>
         </Box>
 

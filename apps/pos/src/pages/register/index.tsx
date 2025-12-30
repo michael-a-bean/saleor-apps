@@ -71,7 +71,7 @@ const RegisterPage: NextPage = () => {
             <Box display="flex" justifyContent="space-between" alignItems="center" marginBottom={4}>
               <Box>
                 <Text size={6} fontWeight="bold">
-                  {currentSession.registerName}
+                  {currentSession.registerCode}
                 </Text>
                 <Text size={3} color="default2">
                   Status:{" "}
@@ -98,7 +98,7 @@ const RegisterPage: NextPage = () => {
                 <Text size={2} color="default2">
                   Opened By
                 </Text>
-                <Text size={4}>{currentSession.openedByName ?? "Unknown"}</Text>
+                <Text size={4}>{currentSession.openedBy ?? "Unknown"}</Text>
               </Box>
               <Box>
                 <Text size={2} color="default2">
@@ -110,7 +110,7 @@ const RegisterPage: NextPage = () => {
                 <Text size={2} color="default2">
                   Opening Float
                 </Text>
-                <Text size={4}>${currentSession.openingFloat.toFixed(2)}</Text>
+                <Text size={4}>${Number(currentSession.openingFloat).toFixed(2)}</Text>
               </Box>
             </Box>
           </Box>
@@ -194,7 +194,7 @@ const RegisterPage: NextPage = () => {
                 <Text size={2} color="default2">
                   Session Duration
                 </Text>
-                <Text size={4}>{getSessionDuration(currentSession.openedAt)}</Text>
+                <Text size={4}>{getSessionDuration(new Date(currentSession.openedAt))}</Text>
               </Box>
             </Box>
           </Box>

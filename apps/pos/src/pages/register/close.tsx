@@ -88,8 +88,7 @@ const RegisterClosePage: NextPage = () => {
 
     closeMutation.mutate({
       sessionId: currentSession.id,
-      closedByName: closedByName.trim(),
-      notes: notes.trim() || undefined,
+      notes: notes.trim() ? `Closed by: ${closedByName.trim()}\n${notes.trim()}` : `Closed by: ${closedByName.trim()}`,
       closingCount: denominations,
     });
   };
@@ -144,19 +143,19 @@ const RegisterClosePage: NextPage = () => {
               <Text size={2} color="default2">
                 Register
               </Text>
-              <Text size={4}>{currentSession.registerName}</Text>
+              <Text size={4}>{currentSession.registerCode}</Text>
             </Box>
             <Box>
               <Text size={2} color="default2">
                 Opened By
               </Text>
-              <Text size={4}>{currentSession.openedByName}</Text>
+              <Text size={4}>{currentSession.openedBy ?? "Unknown"}</Text>
             </Box>
             <Box>
               <Text size={2} color="default2">
                 Opening Float
               </Text>
-              <Text size={4}>${currentSession.openingFloat.toFixed(2)}</Text>
+              <Text size={4}>${Number(currentSession.openingFloat).toFixed(2)}</Text>
             </Box>
             <Box>
               <Text size={2} color="default2">
@@ -336,9 +335,9 @@ const RegisterClosePage: NextPage = () => {
             onClick={handleSubmit}
             variant="primary"
             size="large"
-            disabled={closeMutation.isPending || !closedByName.trim()}
+            disabled={closeMutation.isLoading || !closedByName.trim()}
           >
-            {closeMutation.isPending ? "Closing..." : "Close Register"}
+            {closeMutation.isLoading ? "Closing..." : "Close Register"}
           </Button>
         </Box>
 

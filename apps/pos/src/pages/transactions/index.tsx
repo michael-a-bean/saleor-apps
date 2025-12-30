@@ -39,7 +39,7 @@ const TransactionsPage: NextPage = () => {
           backgroundColor="default1"
           borderBottomWidth={1}
           borderBottomStyle="solid"
-          borderBottomColor="default1"
+          borderColor="default1"
         >
           <Text size={2} fontWeight="bold">
             Transaction #
@@ -76,7 +76,7 @@ const TransactionsPage: NextPage = () => {
               padding={3}
               borderBottomWidth={1}
               borderBottomStyle="solid"
-              borderBottomColor="default1"
+              borderColor="default1"
               alignItems="center"
             >
               <Box>
@@ -87,15 +87,15 @@ const TransactionsPage: NextPage = () => {
                   {tx._count?.lines ?? 0} items
                 </Text>
               </Box>
-              <Text size={3}>{formatType(tx.type)}</Text>
+              <Text size={3}>{formatType(tx.transactionType)}</Text>
               <Box>
                 <StatusBadge status={tx.status} />
               </Box>
               <Text size={3} textAlign="right" fontWeight="bold">
-                ${tx.total.toFixed(2)}
+                ${Number(tx.grandTotal).toFixed(2)}
               </Text>
               <Text size={2} color="default2">
-                {new Date(tx.createdAt).toLocaleString()}
+                {new Date(tx.startedAt).toLocaleString()}
               </Text>
               <Box textAlign="center">
                 <Link href={`/transactions/${tx.id}`}>
@@ -119,7 +119,7 @@ const TransactionsPage: NextPage = () => {
 };
 
 const StatusBadge = ({ status }: { status: string }) => {
-  const colors: Record<string, string> = {
+  const colors: Record<string, "warning1" | "info1" | "success1" | "critical1" | "default1"> = {
     DRAFT: "warning1",
     SUSPENDED: "info1",
     COMPLETED: "success1",
@@ -131,7 +131,7 @@ const StatusBadge = ({ status }: { status: string }) => {
       padding={1}
       paddingX={2}
       borderRadius={2}
-      backgroundColor={colors[status] || "default1"}
+      backgroundColor={colors[status] ?? "default1"}
       display="inline-block"
     >
       <Text size={1}>{status}</Text>

@@ -94,7 +94,7 @@ export const receiptsRouter = router({
           payments: {
             where: { status: "COMPLETED" },
           },
-          session: true,
+          registerSession: true,
         },
       });
 
@@ -107,27 +107,27 @@ export const receiptsRouter = router({
 
       // Format line items
       const items: ReceiptLineItem[] = transaction.lines.map((line) => ({
-        name: `${line.productName} - ${line.variantName}`,
-        sku: line.sku,
+        name: line.saleorVariantName ?? "Unknown Item",
+        sku: line.saleorVariantSku,
         quantity: line.quantity,
         unitPrice: line.unitPrice.toNumber(),
-        discount: line.discountAmount.toNumber(),
+        discount: line.lineDiscountAmount.toNumber(),
         lineTotal: line.lineTotal.toNumber(),
       }));
 
       // Format payments
       const payments: ReceiptPayment[] = transaction.payments.map((p) => ({
-        method: formatPaymentMethod(p.paymentMethod),
-        amount: p.amount.toNumber(),
-        reference: p.reference ?? undefined,
+        method: formatPaymentMethod(p.methodType),
+        amount: p.totalAmount.toNumber(),
+        reference: p.referenceNumber ?? undefined,
       }));
 
       // Calculate tendered and change
-      const amountTendered = transaction.payments.reduce((sum, p) => sum + p.amountTendered.toNumber(), 0);
-      const changeGiven = transaction.payments.reduce((sum, p) => sum + p.changeGiven.toNumber(), 0);
+      const amountTendered = transaction.payments.reduce((sum, p) => sum + (p.amountTendered?.toNumber() ?? p.totalAmount.toNumber()), 0);
+      const changeGiven = transaction.payments.reduce((sum, p) => sum + (p.changeGiven?.toNumber() ?? 0), 0);
 
       // Format date and time
-      const txDate = transaction.completedAt ?? transaction.createdAt;
+      const txDate = transaction.completedAt ?? transaction.startedAt;
       const date = txDate.toLocaleDateString("en-US", {
         year: "numeric",
         month: "2-digit",
@@ -146,20 +146,20 @@ export const receiptsRouter = router({
 
         // Transaction info
         transactionNumber: transaction.transactionNumber,
-        transactionType: formatTransactionType(transaction.type),
+        transactionType: formatTransactionType(transaction.transactionType),
         date,
         time,
-        register: transaction.session.registerName,
-        cashier: transaction.completedByName ?? transaction.session.openedByName ?? "Unknown",
+        register: transaction.registerSession.registerCode,
+        cashier: transaction.completedBy ?? transaction.registerSession.openedBy ?? "Unknown",
 
         // Line items
         items,
 
         // Totals
         subtotal: transaction.subtotal.toNumber(),
-        discountTotal: transaction.discountTotal.toNumber(),
-        taxTotal: transaction.taxTotal.toNumber(),
-        total: transaction.total.toNumber(),
+        discountTotal: transaction.totalDiscount.toNumber(),
+        taxTotal: transaction.totalTax.toNumber(),
+        total: transaction.grandTotal.toNumber(),
 
         // Payments
         payments,
@@ -205,7 +205,7 @@ export const receiptsRouter = router({
           payments: {
             where: { status: "COMPLETED" },
           },
-          session: true,
+          registerSession: true,
         },
       });
 
@@ -252,10 +252,13 @@ export const receiptsRouter = router({
       await ctx.prisma.posAuditEvent.create({
         data: {
           installationId: ctx.installationId,
-          transactionId: transaction.id,
-          eventType: input.isReprint ? "RECEIPT_REPRINTED" : "RECEIPT_PRINTED",
-          performedBy: ctx.token ?? null,
-          performedByName: input.printedByName,
+          entityType: "PosTransaction",
+          entityId: transaction.id,
+          action: input.isReprint ? "RECEIPT_REPRINTED" : "RECEIPT_PRINTED",
+          userId: ctx.token ?? null,
+          metadata: {
+            printedByName: input.printedByName,
+          },
         },
       });
 
@@ -300,35 +303,34 @@ function formatTransactionType(type: string): string {
  */
 function generateReceiptHtml(transaction: {
   transactionNumber: string;
-  type: string;
+  transactionType: string;
   completedAt: Date | null;
-  createdAt: Date;
+  startedAt: Date;
   subtotal: { toNumber: () => number };
-  discountTotal: { toNumber: () => number };
-  taxTotal: { toNumber: () => number };
-  total: { toNumber: () => number };
-  completedByName: string | null;
+  totalDiscount: { toNumber: () => number };
+  totalTax: { toNumber: () => number };
+  grandTotal: { toNumber: () => number };
+  completedBy: string | null;
   lines: Array<{
-    productName: string;
-    variantName: string;
-    sku: string | null;
+    saleorVariantName: string | null;
+    saleorVariantSku: string | null;
     quantity: number;
     unitPrice: { toNumber: () => number };
-    discountAmount: { toNumber: () => number };
+    lineDiscountAmount: { toNumber: () => number };
     lineTotal: { toNumber: () => number };
   }>;
   payments: Array<{
-    paymentMethod: string;
-    amount: { toNumber: () => number };
-    amountTendered: { toNumber: () => number };
-    changeGiven: { toNumber: () => number };
+    methodType: string;
+    totalAmount: { toNumber: () => number };
+    amountTendered: { toNumber: () => number } | null;
+    changeGiven: { toNumber: () => number } | null;
   }>;
-  session: {
-    registerName: string;
-    openedByName: string | null;
+  registerSession: {
+    registerCode: string;
+    openedBy: string | null;
   };
 }): string {
-  const txDate = transaction.completedAt ?? transaction.createdAt;
+  const txDate = transaction.completedAt ?? transaction.startedAt;
   const dateStr = txDate.toLocaleDateString("en-US");
   const timeStr = txDate.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
 
@@ -339,16 +341,16 @@ function generateReceiptHtml(transaction: {
       (line) => `
       <tr>
         <td class="item-name">
-          ${line.productName}<br>
-          <small>${line.variantName}${line.sku ? ` (${line.sku})` : ""}</small>
+          ${line.saleorVariantName ?? "Unknown Item"}<br>
+          <small>${line.saleorVariantSku ? ` (${line.saleorVariantSku})` : ""}</small>
         </td>
         <td class="item-qty">${line.quantity}</td>
         <td class="item-price">${formatCurrency(line.unitPrice.toNumber())}</td>
         <td class="item-total">${formatCurrency(line.lineTotal.toNumber())}</td>
       </tr>
       ${
-        line.discountAmount.toNumber() > 0
-          ? `<tr class="discount-row"><td colspan="3">Discount</td><td>-${formatCurrency(line.discountAmount.toNumber())}</td></tr>`
+        line.lineDiscountAmount.toNumber() > 0
+          ? `<tr class="discount-row"><td colspan="3">Discount</td><td>-${formatCurrency(line.lineDiscountAmount.toNumber())}</td></tr>`
           : ""
       }
     `
@@ -359,14 +361,14 @@ function generateReceiptHtml(transaction: {
     .map(
       (p) => `
       <tr>
-        <td>${formatPaymentMethod(p.paymentMethod)}</td>
-        <td class="amount">${formatCurrency(p.amount.toNumber())}</td>
+        <td>${formatPaymentMethod(p.methodType)}</td>
+        <td class="amount">${formatCurrency(p.totalAmount.toNumber())}</td>
       </tr>
     `
     )
     .join("");
 
-  const totalChange = transaction.payments.reduce((sum, p) => sum + p.changeGiven.toNumber(), 0);
+  const totalChange = transaction.payments.reduce((sum, p) => sum + (p.changeGiven?.toNumber() ?? 0), 0);
 
   return `
 <!DOCTYPE html>
@@ -428,10 +430,10 @@ function generateReceiptHtml(transaction: {
 
   <table class="tx-info">
     <tr><td>Transaction:</td><td>${transaction.transactionNumber}</td></tr>
-    <tr><td>Type:</td><td>${formatTransactionType(transaction.type)}</td></tr>
+    <tr><td>Type:</td><td>${formatTransactionType(transaction.transactionType)}</td></tr>
     <tr><td>Date:</td><td>${dateStr} ${timeStr}</td></tr>
-    <tr><td>Register:</td><td>${transaction.session.registerName}</td></tr>
-    <tr><td>Cashier:</td><td>${transaction.completedByName ?? transaction.session.openedByName ?? "Unknown"}</td></tr>
+    <tr><td>Register:</td><td>${transaction.registerSession.registerCode}</td></tr>
+    <tr><td>Cashier:</td><td>${transaction.completedBy ?? transaction.registerSession.openedBy ?? "Unknown"}</td></tr>
   </table>
 
   <div class="divider"></div>
@@ -458,18 +460,18 @@ function generateReceiptHtml(transaction: {
       <td class="amount">${formatCurrency(transaction.subtotal.toNumber())}</td>
     </tr>
     ${
-      transaction.discountTotal.toNumber() > 0
-        ? `<tr><td class="label">Discount:</td><td class="amount">-${formatCurrency(transaction.discountTotal.toNumber())}</td></tr>`
+      transaction.totalDiscount.toNumber() > 0
+        ? `<tr><td class="label">Discount:</td><td class="amount">-${formatCurrency(transaction.totalDiscount.toNumber())}</td></tr>`
         : ""
     }
     ${
-      transaction.taxTotal.toNumber() > 0
-        ? `<tr><td class="label">Tax:</td><td class="amount">${formatCurrency(transaction.taxTotal.toNumber())}</td></tr>`
+      transaction.totalTax.toNumber() > 0
+        ? `<tr><td class="label">Tax:</td><td class="amount">${formatCurrency(transaction.totalTax.toNumber())}</td></tr>`
         : ""
     }
     <tr class="total-row">
       <td class="label">TOTAL:</td>
-      <td class="amount">${formatCurrency(transaction.total.toNumber())}</td>
+      <td class="amount">${formatCurrency(transaction.grandTotal.toNumber())}</td>
     </tr>
   </table>
 

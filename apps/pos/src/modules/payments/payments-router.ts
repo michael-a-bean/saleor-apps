@@ -12,19 +12,19 @@ const logger = createLogger("payments-router");
  */
 const recordPaymentSchema = z.object({
   transactionId: z.string().uuid(),
-  paymentMethod: z.enum(["CASH", "CARD_PRESENT", "CARD_MANUAL", "GIFT_CARD", "STORE_CREDIT", "CHECK", "OTHER"]),
+  methodType: z.enum(["CASH", "CARD_PRESENT", "CARD_MANUAL", "GIFT_CARD", "STORE_CREDIT", "CHECK", "OTHER"]),
   amount: z.number().positive(),
+  tipAmount: z.number().min(0).default(0),
   // Cash-specific
   amountTendered: z.number().positive().optional(), // For calculating change
   // Card-specific (will be used in Phase 2)
-  cardLast4: z.string().length(4).optional(),
+  cardLastFour: z.string().length(4).optional(),
   cardBrand: z.string().max(20).optional(),
-  stripePaymentIntentId: z.string().optional(),
-  // Store credit specific
-  customerCreditId: z.string().uuid().optional(),
-  // Other
-  reference: z.string().max(255).optional(), // External reference (check #, gift card #)
-  notes: z.string().max(500).optional(),
+  authCode: z.string().optional(),
+  externalPaymentId: z.string().optional(), // Stripe PI, etc.
+  paymentGateway: z.string().optional(), // "stripe", "square", etc.
+  // Gift card / store credit
+  giftCardNumber: z.string().optional(),
 });
 
 /**
@@ -52,7 +52,7 @@ export const paymentsRouter = router({
       include: {
         payments: true,
         lines: true,
-        session: true,
+        registerSession: true,
       },
     });
 
@@ -78,114 +78,68 @@ export const paymentsRouter = router({
     }
 
     // Calculate remaining balance
-    const existingPayments = transaction.payments.reduce((sum, p) => sum + p.amount.toNumber(), 0);
-    const transactionTotal = transaction.total.toNumber();
+    const existingPayments = transaction.payments.reduce((sum, p) => sum + p.totalAmount.toNumber(), 0);
+    const transactionTotal = transaction.grandTotal.toNumber();
     const remainingBalance = transactionTotal - existingPayments;
 
-    if (input.amount > remainingBalance + 0.01) {
+    const totalAmount = input.amount + input.tipAmount;
+    if (totalAmount > remainingBalance + 0.01) {
       // Allow small rounding
       throw new TRPCError({
         code: "BAD_REQUEST",
-        message: `Payment amount ($${input.amount.toFixed(2)}) exceeds remaining balance ($${remainingBalance.toFixed(2)})`,
+        message: `Payment amount ($${totalAmount.toFixed(2)}) exceeds remaining balance ($${remainingBalance.toFixed(2)})`,
       });
     }
 
     // Calculate change for cash payments
-    let changeGiven = 0;
+    let changeGiven: number | null = null;
 
-    if (input.paymentMethod === "CASH" && input.amountTendered) {
-      if (input.amountTendered < input.amount) {
+    if (input.methodType === "CASH" && input.amountTendered) {
+      if (input.amountTendered < totalAmount) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Amount tendered is less than payment amount",
         });
       }
-      changeGiven = input.amountTendered - input.amount;
+      changeGiven = input.amountTendered - totalAmount;
     }
 
-    // Validate store credit if used
-    if (input.paymentMethod === "STORE_CREDIT") {
-      if (!input.customerCreditId) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Customer credit ID is required for store credit payments",
-        });
-      }
-
-      const credit = await ctx.prisma.customerCredit.findFirst({
-        where: {
-          id: input.customerCreditId,
-          installationId: { in: ctx.allInstallationIds }, // Can use credits from any related app
-        },
-      });
-
-      if (!credit) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Customer credit account not found",
-        });
-      }
-
-      if (credit.balance.toNumber() < input.amount) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `Insufficient store credit balance. Available: $${credit.balance.toNumber().toFixed(2)}`,
-        });
-      }
-    }
+    // Get next payment number
+    const paymentNumber = transaction.payments.length + 1;
 
     // Create the payment record
     const payment = await ctx.prisma.posPayment.create({
       data: {
         transactionId: transaction.id,
-        paymentMethod: input.paymentMethod,
-        amount: input.amount,
-        amountTendered: input.amountTendered ?? input.amount,
-        changeGiven,
+        paymentNumber,
+        methodType: input.methodType,
         status: "COMPLETED", // Cash payments complete immediately
-        cardLast4: input.cardLast4,
+        amount: input.amount,
+        tipAmount: input.tipAmount,
+        totalAmount,
+        currency: transaction.currency,
+        amountTendered: input.amountTendered ?? null,
+        changeGiven: changeGiven ?? null,
+        cardLastFour: input.cardLastFour,
         cardBrand: input.cardBrand,
-        stripePaymentIntentId: input.stripePaymentIntentId,
-        customerCreditId: input.customerCreditId,
-        reference: input.reference,
-        notes: input.notes,
+        authCode: input.authCode,
+        externalPaymentId: input.externalPaymentId,
+        paymentGateway: input.paymentGateway,
+        giftCardNumber: input.giftCardNumber,
       },
     });
 
     // Record cash movement for cash payments
-    if (input.paymentMethod === "CASH") {
+    if (input.methodType === "CASH") {
       await ctx.prisma.cashMovement.create({
         data: {
-          sessionId: transaction.session.id,
-          transactionId: transaction.id,
-          movementType: transaction.type === "RETURN" ? "RETURN_CASH" : "SALE_CASH",
+          registerSessionId: transaction.registerSession.id,
+          movementType: transaction.transactionType === "RETURN" ? "RETURN_CASH" : "SALE_CASH",
           amount: input.amount,
-          performedBy: ctx.token ?? null,
+          currency: transaction.currency,
+          posTransactionId: transaction.id,
+          performedBy: ctx.token ?? "unknown",
           notes: `Payment for ${transaction.transactionNumber}`,
-        },
-      });
-    }
-
-    // Debit store credit if used
-    if (input.paymentMethod === "STORE_CREDIT" && input.customerCreditId) {
-      // Update credit balance
-      await ctx.prisma.customerCredit.update({
-        where: { id: input.customerCreditId },
-        data: {
-          balance: {
-            decrement: input.amount,
-          },
-        },
-      });
-
-      // Create credit transaction record
-      await ctx.prisma.creditTransaction.create({
-        data: {
-          creditAccountId: input.customerCreditId,
-          transactionType: "POS_PAYMENT",
-          amount: -input.amount, // Negative for debit
-          sourcePosTransactionId: transaction.id,
-          note: `POS payment for ${transaction.transactionNumber}`,
         },
       });
     }
@@ -193,18 +147,18 @@ export const paymentsRouter = router({
     logger.info("Payment recorded", {
       transactionId: transaction.id,
       paymentId: payment.id,
-      method: input.paymentMethod,
+      method: input.methodType,
       amount: input.amount,
       changeGiven,
     });
 
     // Check if transaction is fully paid
-    const totalPaid = existingPayments + input.amount;
+    const totalPaid = existingPayments + totalAmount;
     const isFullyPaid = totalPaid >= transactionTotal - 0.01; // Allow small rounding
 
     return {
       payment,
-      changeGiven,
+      changeGiven: changeGiven ?? 0,
       totalPaid,
       remainingBalance: Math.max(0, transactionTotal - totalPaid),
       isFullyPaid,
@@ -224,7 +178,7 @@ export const paymentsRouter = router({
       include: {
         payments: true,
         lines: true,
-        session: true,
+        registerSession: true,
       },
     });
 
@@ -250,8 +204,8 @@ export const paymentsRouter = router({
     }
 
     // Verify full payment
-    const totalPaid = transaction.payments.reduce((sum, p) => sum + p.amount.toNumber(), 0);
-    const transactionTotal = transaction.total.toNumber();
+    const totalPaid = transaction.payments.reduce((sum, p) => sum + p.totalAmount.toNumber(), 0);
+    const transactionTotal = transaction.grandTotal.toNumber();
 
     if (totalPaid < transactionTotal - 0.01) {
       throw new TRPCError({
@@ -282,11 +236,12 @@ export const paymentsRouter = router({
       `,
         {
           input: {
+            channelId: transaction.saleorChannelId,
             lines: transaction.lines.map((line) => ({
               variantId: line.saleorVariantId,
               quantity: line.quantity,
               ...(line.priceOverride && {
-                price: line.priceOverride.toNumber(),
+                price: line.unitPrice.toNumber(),
               }),
             })),
             // TODO: Add customer if attached
@@ -366,7 +321,7 @@ export const paymentsRouter = router({
         status: "COMPLETED",
         completedAt: new Date(),
         saleorOrderId,
-        completedByName: input.completedByName,
+        completedBy: ctx.token ?? input.completedByName,
       },
       include: {
         lines: true,
@@ -378,15 +333,15 @@ export const paymentsRouter = router({
     await ctx.prisma.posAuditEvent.create({
       data: {
         installationId: ctx.installationId,
-        transactionId: transaction.id,
-        sessionId: transaction.session.id,
-        eventType: "TRANSACTION_COMPLETED",
-        performedBy: ctx.token ?? null,
-        performedByName: input.completedByName,
-        details: {
+        entityType: "PosTransaction",
+        entityId: transaction.id,
+        action: "COMPLETED",
+        userId: ctx.token ?? null,
+        metadata: {
           total: transactionTotal,
           paymentCount: transaction.payments.length,
           saleorOrderId,
+          completedByName: input.completedByName,
         },
       },
     });
@@ -426,21 +381,21 @@ export const paymentsRouter = router({
       }
 
       const subtotal = transaction.subtotal.toNumber();
-      const discountTotal = transaction.discountTotal.toNumber();
-      const taxTotal = transaction.taxTotal.toNumber();
-      const total = transaction.total.toNumber();
-      const totalPaid = transaction.payments.reduce((sum, p) => sum + p.amount.toNumber(), 0);
+      const discountTotal = transaction.totalDiscount.toNumber();
+      const taxTotal = transaction.totalTax.toNumber();
+      const total = transaction.grandTotal.toNumber();
+      const totalPaid = transaction.payments.reduce((sum, p) => sum + p.totalAmount.toNumber(), 0);
       const remainingBalance = Math.max(0, total - totalPaid);
-      const changeGiven = transaction.payments.reduce((sum, p) => sum + p.changeGiven.toNumber(), 0);
+      const changeGiven = transaction.payments.reduce((sum, p) => sum + (p.changeGiven?.toNumber() ?? 0), 0);
 
       const paymentBreakdown = transaction.payments.reduce(
         (acc, p) => {
-          const method = p.paymentMethod;
+          const method = p.methodType;
 
           if (!acc[method]) {
             acc[method] = 0;
           }
-          acc[method] += p.amount.toNumber();
+          acc[method] += p.totalAmount.toNumber();
 
           return acc;
         },
@@ -477,7 +432,7 @@ export const paymentsRouter = router({
         where: { id: input.paymentId },
         include: {
           transaction: {
-            include: { session: true },
+            include: { registerSession: true },
           },
         },
       });
@@ -519,39 +474,17 @@ export const paymentsRouter = router({
       });
 
       // Reverse cash movement if it was cash
-      if (payment.paymentMethod === "CASH") {
+      if (payment.methodType === "CASH") {
         // Create a reverse cash movement
         await ctx.prisma.cashMovement.create({
           data: {
-            sessionId: payment.transaction.session.id,
-            transactionId: payment.transaction.id,
+            registerSessionId: payment.transaction.registerSession.id,
+            posTransactionId: payment.transaction.id,
             movementType: "RETURN_CASH", // Reversing a sale
             amount: -payment.amount.toNumber(), // Negative to reverse
-            performedBy: ctx.token ?? null,
-            performedByName: input.voidedByName,
+            currency: payment.currency,
+            performedBy: ctx.token ?? "unknown",
             notes: `Voided payment: ${input.reason}`,
-          },
-        });
-      }
-
-      // Restore store credit if it was used
-      if (payment.paymentMethod === "STORE_CREDIT" && payment.customerCreditId) {
-        await ctx.prisma.customerCredit.update({
-          where: { id: payment.customerCreditId },
-          data: {
-            balance: {
-              increment: payment.amount.toNumber(),
-            },
-          },
-        });
-
-        await ctx.prisma.creditTransaction.create({
-          data: {
-            creditAccountId: payment.customerCreditId,
-            transactionType: "POS_REFUND",
-            amount: payment.amount.toNumber(), // Positive for credit
-            sourcePosTransactionId: payment.transaction.id,
-            note: `Voided payment on ${payment.transaction.transactionNumber}: ${input.reason}`,
           },
         });
       }
@@ -560,15 +493,16 @@ export const paymentsRouter = router({
       await ctx.prisma.posAuditEvent.create({
         data: {
           installationId: ctx.installationId,
-          transactionId: payment.transaction.id,
-          eventType: "PAYMENT_VOIDED",
-          performedBy: ctx.token ?? null,
-          performedByName: input.voidedByName,
-          details: {
-            paymentId: payment.id,
-            method: payment.paymentMethod,
+          entityType: "PosPayment",
+          entityId: payment.id,
+          action: "VOIDED",
+          userId: ctx.token ?? null,
+          metadata: {
+            transactionId: payment.transaction.id,
+            method: payment.methodType,
             amount: payment.amount.toNumber(),
             reason: input.reason,
+            voidedByName: input.voidedByName,
           },
         },
       });

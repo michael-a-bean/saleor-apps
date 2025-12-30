@@ -14,6 +14,10 @@ const TransactionPage: NextPage = () => {
   const [cashAmount, setCashAmount] = useState("");
   const [showPaymentModal, setShowPaymentModal] = useState(false);
 
+  // TODO: Replace with actual channel/warehouse from config or session
+  const saleorChannelId = "Q2hhbm5lbDox"; // Default channel ID
+  const saleorWarehouseId = "V2FyZWhvdXNlOjg1YTg0MmMwLTk4NjQtNDlkZi1iMDg5LTg1ZGU2Y2ZlYzY3Yg==";
+
   // Check for open register
   const { data: currentSession, isLoading: sessionLoading } = trpcClient.register.current.useQuery();
 
@@ -80,7 +84,11 @@ const TransactionPage: NextPage = () => {
 
       // Create transaction if none exists
       if (!txId) {
-        const newTx = await createTransaction.mutateAsync({ type: "SALE" });
+        const newTx = await createTransaction.mutateAsync({
+          saleorChannelId,
+          saleorWarehouseId,
+          type: "SALE",
+        });
 
         txId = newTx.id;
       }
@@ -116,7 +124,6 @@ const TransactionPage: NextPage = () => {
       voidTransaction.mutate({
         transactionId: currentTransaction.id,
         voidReason: reason,
-        voidedByName: "Cashier", // TODO: Get from user context
       });
     }
   };
@@ -132,12 +139,12 @@ const TransactionPage: NextPage = () => {
       return;
     }
 
-    const total = currentTransaction.total;
+    const total = Number(currentTransaction.grandTotal);
 
     // Record cash payment
     const result = await recordPayment.mutateAsync({
       transactionId: currentTransaction.id,
-      paymentMethod: "CASH",
+      methodType: "CASH",
       amount: Math.min(amount, total),
       amountTendered: amount,
     });
@@ -199,8 +206,8 @@ const TransactionPage: NextPage = () => {
     );
   }
 
-  const total = currentTransaction?.total ?? 0;
-  const subtotal = currentTransaction?.subtotal ?? 0;
+  const total = Number(currentTransaction?.grandTotal ?? 0);
+  const subtotal = Number(currentTransaction?.subtotal ?? 0);
   const lineCount = currentTransaction?.lines?.length ?? 0;
 
   return (
@@ -227,8 +234,8 @@ const TransactionPage: NextPage = () => {
                   autoFocus
                 />
               </Box>
-              <Button type="submit" variant="primary" disabled={addLine.isPending}>
-                {addLine.isPending ? "Adding..." : "Add"}
+              <Button type="submit" variant="primary" disabled={addLine.isLoading}>
+                {addLine.isLoading ? "Adding..." : "Add"}
               </Button>
             </Box>
           </form>
@@ -263,9 +270,7 @@ const TransactionPage: NextPage = () => {
                 gap={2}
                 padding={3}
                 backgroundColor="default1"
-                borderBottomWidth={1}
-                borderBottomStyle="solid"
-                borderBottomColor="default1"
+                borderRadius={2}
               >
                 <Text size={2} fontWeight="bold">
                   Item
@@ -294,14 +299,13 @@ const TransactionPage: NextPage = () => {
                   padding={3}
                   borderBottomWidth={1}
                   borderBottomStyle="solid"
-                  borderBottomColor="default1"
+                  borderColor="default1"
                   alignItems="center"
                 >
                   <Box>
-                    <Text size={3}>{line.productName}</Text>
+                    <Text size={3}>{line.saleorVariantName ?? "Unknown Item"}</Text>
                     <Text size={2} color="default2">
-                      {line.variantName}
-                      {line.sku && ` (${line.sku})`}
+                      {line.saleorVariantSku && `SKU: ${line.saleorVariantSku}`}
                     </Text>
                   </Box>
                   <Box display="flex" alignItems="center" justifyContent="center" gap={1}>
@@ -322,10 +326,10 @@ const TransactionPage: NextPage = () => {
                     </Button>
                   </Box>
                   <Text size={3} textAlign="right">
-                    ${line.unitPrice.toFixed(2)}
+                    ${Number(line.unitPrice).toFixed(2)}
                   </Text>
                   <Text size={3} textAlign="right" fontWeight="bold">
-                    ${line.lineTotal.toFixed(2)}
+                    ${Number(line.lineTotal).toFixed(2)}
                   </Text>
                   <Box textAlign="center">
                     <Button
@@ -378,7 +382,7 @@ const TransactionPage: NextPage = () => {
               paddingTop={2}
               borderTopWidth={1}
               borderTopStyle="solid"
-              borderTopColor="default1"
+              borderColor="default1"
             >
               <Text size={6} fontWeight="bold">
                 Total
@@ -489,14 +493,14 @@ const TransactionPage: NextPage = () => {
                 variant="primary"
                 onClick={handleCashPayment}
                 disabled={
-                  recordPayment.isPending ||
-                  completeTransaction.isPending ||
+                  recordPayment.isLoading ||
+                  completeTransaction.isLoading ||
                   !cashAmount ||
                   parseFloat(cashAmount) <= 0
                 }
                 __flex="1"
               >
-                {recordPayment.isPending || completeTransaction.isPending
+                {recordPayment.isLoading || completeTransaction.isLoading
                   ? "Processing..."
                   : "Complete Sale"}
               </Button>

@@ -60,6 +60,16 @@ const listTransactionsSchema = z.object({
 });
 
 /**
+ * Create transaction schema
+ */
+const createTransactionSchema = z.object({
+  type: z.enum(["SALE", "RETURN", "EXCHANGE", "NO_SALE"]).default("SALE"),
+  saleorChannelId: z.string().min(1),
+  saleorWarehouseId: z.string().min(1),
+  currency: z.string().length(3).default("USD"),
+});
+
+/**
  * Transactions Router
  * Manages cart/transaction lifecycle
  */
@@ -68,11 +78,7 @@ export const transactionsRouter = router({
    * Create a new draft transaction
    */
   create: protectedClientProcedure
-    .input(
-      z.object({
-        type: z.enum(["SALE", "RETURN", "EXCHANGE", "NO_SALE"]).default("SALE"),
-      })
-    )
+    .input(createTransactionSchema)
     .mutation(async ({ ctx, input }) => {
       // Get current open session
       const session = await ctx.prisma.registerSession.findFirst({
@@ -92,7 +98,7 @@ export const transactionsRouter = router({
       // Check if there's already a draft transaction
       const existingDraft = await ctx.prisma.posTransaction.findFirst({
         where: {
-          sessionId: session.id,
+          registerSessionId: session.id,
           status: "DRAFT",
         },
       });
@@ -110,7 +116,7 @@ export const transactionsRouter = router({
       const count = await ctx.prisma.posTransaction.count({
         where: {
           installationId: ctx.installationId,
-          createdAt: {
+          startedAt: {
             gte: new Date(today.setHours(0, 0, 0, 0)),
           },
         },
@@ -120,14 +126,18 @@ export const transactionsRouter = router({
       const transaction = await ctx.prisma.posTransaction.create({
         data: {
           installationId: ctx.installationId,
-          sessionId: session.id,
+          registerSessionId: session.id,
           transactionNumber,
-          type: input.type,
+          transactionType: input.type,
           status: "DRAFT",
+          saleorChannelId: input.saleorChannelId,
+          saleorWarehouseId: input.saleorWarehouseId,
+          cashierId: ctx.token ?? "unknown",
           subtotal: 0,
-          discountTotal: 0,
-          taxTotal: 0,
-          total: 0,
+          totalDiscount: 0,
+          totalTax: 0,
+          grandTotal: 0,
+          currency: input.currency,
         },
         include: {
           lines: true,
@@ -162,12 +172,12 @@ export const transactionsRouter = router({
 
     const transaction = await ctx.prisma.posTransaction.findFirst({
       where: {
-        sessionId: session.id,
+        registerSessionId: session.id,
         status: "DRAFT",
       },
       include: {
         lines: {
-          orderBy: { createdAt: "asc" },
+          orderBy: { lineNumber: "asc" },
         },
         payments: true,
       },
@@ -189,14 +199,14 @@ export const transactionsRouter = router({
         },
         include: {
           lines: {
-            orderBy: { createdAt: "asc" },
+            orderBy: { lineNumber: "asc" },
           },
           payments: true,
-          session: {
+          registerSession: {
             select: {
               id: true,
-              registerName: true,
-              openedByName: true,
+              registerCode: true,
+              openedBy: true,
             },
           },
         },
@@ -301,6 +311,9 @@ export const transactionsRouter = router({
         id: input.transactionId,
         installationId: ctx.installationId,
       },
+      include: {
+        lines: true,
+      },
     });
 
     if (!transaction) {
@@ -356,7 +369,7 @@ export const transactionsRouter = router({
       }
 
       variantData = searchResult.data.productVariant;
-      variantId = variantData.id as string;
+      variantId = searchResult.data.productVariant.id as string;
     } else if (variantId) {
       // Fetch variant data by ID
       const variantResult = await ctx.apiClient!.query(
@@ -403,28 +416,28 @@ export const transactionsRouter = router({
 
     // Extract pricing
     const pricing = variantData.pricing as { price?: { gross?: { amount: number; currency: string } } };
-    const unitPrice = input.priceOverride ?? pricing?.price?.gross?.amount ?? 0;
-    const currency = pricing?.price?.gross?.currency ?? "USD";
-    const product = variantData.product as { id: string; name: string };
+    const originalUnitPrice = pricing?.price?.gross?.amount ?? 0;
+    const unitPrice = input.priceOverride ?? originalUnitPrice;
+    const currency = pricing?.price?.gross?.currency ?? transaction.currency;
 
     // Calculate line totals
     const lineSubtotal = unitPrice * input.quantity;
-    let lineDiscount = 0;
+    let lineDiscountAmount = 0;
 
     if (input.discountAmount) {
-      lineDiscount = input.discountAmount;
+      lineDiscountAmount = input.discountAmount;
     } else if (input.discountPercent) {
-      lineDiscount = lineSubtotal * (input.discountPercent / 100);
+      lineDiscountAmount = lineSubtotal * (input.discountPercent / 100);
     }
 
-    const lineTotal = lineSubtotal - lineDiscount;
+    const lineTotal = lineSubtotal - lineDiscountAmount;
 
-    // Check if this variant already exists in the transaction
+    // Check if this variant already exists in the transaction (without override)
     const existingLine = await ctx.prisma.posTransactionLine.findFirst({
       where: {
         transactionId: transaction.id,
         saleorVariantId: variantId,
-        priceOverride: input.priceOverride ?? null,
+        priceOverride: false,
       },
     });
 
@@ -433,36 +446,38 @@ export const transactionsRouter = router({
     if (existingLine && !input.priceOverride && !input.discountAmount && !input.discountPercent) {
       // Update quantity of existing line
       const newQuantity = existingLine.quantity + input.quantity;
-      const newSubtotal = existingLine.unitPrice.toNumber() * newQuantity;
-      const newTotal = newSubtotal - existingLine.discountAmount.toNumber();
+      const newTotal = existingLine.unitPrice.toNumber() * newQuantity;
 
       line = await ctx.prisma.posTransactionLine.update({
         where: { id: existingLine.id },
         data: {
           quantity: newQuantity,
-          lineSubtotal: newSubtotal,
           lineTotal: newTotal,
         },
       });
     } else {
+      // Get next line number
+      const lineNumber = transaction.lines.length + 1;
+
       // Create new line
       line = await ctx.prisma.posTransactionLine.create({
         data: {
           transactionId: transaction.id,
+          lineNumber,
           saleorVariantId: variantId,
-          saleorProductId: product.id,
-          productName: product.name,
-          variantName: variantData.name as string,
-          sku: (variantData.sku as string) ?? null,
+          saleorVariantSku: (variantData.sku as string) ?? null,
+          saleorVariantName: variantData.name as string,
           quantity: input.quantity,
           unitPrice,
-          currency,
-          priceOverride: input.priceOverride ?? null,
-          discountAmount: lineDiscount,
-          discountPercent: input.discountPercent ?? null,
+          originalUnitPrice,
+          priceOverride: input.priceOverride !== undefined,
+          priceOverrideBy: input.priceOverride ? ctx.token ?? null : null,
+          priceOverrideReason: input.priceOverride ? input.discountReason ?? null : null,
+          lineDiscountAmount,
+          lineDiscountPercent: input.discountPercent ?? 0,
           discountReason: input.discountReason ?? null,
-          lineSubtotal,
           lineTotal,
+          currency,
           notes: input.notes ?? null,
         },
       });
@@ -472,14 +487,15 @@ export const transactionsRouter = router({
         await ctx.prisma.posAuditEvent.create({
           data: {
             installationId: ctx.installationId,
-            transactionId: transaction.id,
-            transactionLineId: line.id,
-            eventType: input.priceOverride ? "PRICE_OVERRIDE" : "DISCOUNT_APPLIED",
-            performedBy: ctx.token ?? null,
-            details: {
-              originalPrice: pricing?.price?.gross?.amount,
+            entityType: "PosTransactionLine",
+            entityId: line.id,
+            action: input.priceOverride ? "PRICE_OVERRIDE" : "DISCOUNT_APPLIED",
+            userId: ctx.token ?? null,
+            metadata: {
+              transactionId: transaction.id,
+              originalPrice: originalUnitPrice,
               newPrice: unitPrice,
-              discountAmount: lineDiscount,
+              discountAmount: lineDiscountAmount,
               discountPercent: input.discountPercent,
               reason: input.discountReason,
             },
@@ -538,37 +554,38 @@ export const transactionsRouter = router({
 
     // Calculate new values
     const quantity = input.quantity ?? line.quantity;
-    const unitPrice = input.priceOverride ?? line.priceOverride?.toNumber() ?? line.unitPrice.toNumber();
+    const unitPrice = input.priceOverride ?? line.unitPrice.toNumber();
     const lineSubtotal = unitPrice * quantity;
 
-    let discountAmount = 0;
+    let lineDiscountAmount = 0;
 
     if (input.discountAmount !== undefined) {
-      discountAmount = input.discountAmount ?? 0;
+      lineDiscountAmount = input.discountAmount ?? 0;
     } else if (input.discountPercent !== undefined) {
-      discountAmount = input.discountPercent ? lineSubtotal * (input.discountPercent / 100) : 0;
+      lineDiscountAmount = input.discountPercent ? lineSubtotal * (input.discountPercent / 100) : 0;
     } else {
-      discountAmount = line.discountAmount.toNumber();
+      lineDiscountAmount = line.lineDiscountAmount.toNumber();
     }
 
-    const lineTotal = lineSubtotal - discountAmount;
+    const lineTotal = lineSubtotal - lineDiscountAmount;
 
     // Track if price/discount changed for audit
-    const priceChanged = input.priceOverride !== undefined && input.priceOverride !== line.priceOverride?.toNumber();
+    const priceChanged = input.priceOverride !== undefined && input.priceOverride !== line.unitPrice.toNumber();
     const discountChanged =
-      input.discountAmount !== undefined || (input.discountPercent !== undefined && input.discountPercent !== line.discountPercent?.toNumber());
+      input.discountAmount !== undefined || (input.discountPercent !== undefined && input.discountPercent !== line.lineDiscountPercent.toNumber());
 
     const updatedLine = await ctx.prisma.posTransactionLine.update({
       where: { id: line.id },
       data: {
         quantity,
-        priceOverride: input.priceOverride,
-        discountAmount,
-        discountPercent: input.discountPercent,
-        discountReason: input.discountReason,
-        lineSubtotal,
+        unitPrice: input.priceOverride ?? line.unitPrice,
+        priceOverride: input.priceOverride !== undefined ? true : line.priceOverride,
+        priceOverrideBy: input.priceOverride !== undefined ? ctx.token ?? null : line.priceOverrideBy,
+        lineDiscountAmount,
+        lineDiscountPercent: input.discountPercent ?? line.lineDiscountPercent,
+        discountReason: input.discountReason ?? line.discountReason,
         lineTotal,
-        notes: input.notes,
+        notes: input.notes !== undefined ? input.notes : line.notes,
       },
     });
 
@@ -577,15 +594,20 @@ export const transactionsRouter = router({
       await ctx.prisma.posAuditEvent.create({
         data: {
           installationId: ctx.installationId,
-          transactionId: line.transaction.id,
-          transactionLineId: line.id,
-          eventType: priceChanged ? "PRICE_OVERRIDE" : "DISCOUNT_APPLIED",
-          performedBy: ctx.token ?? null,
-          details: {
-            previousPrice: line.unitPrice.toNumber(),
-            newPrice: unitPrice,
-            previousDiscount: line.discountAmount.toNumber(),
-            newDiscount: discountAmount,
+          entityType: "PosTransactionLine",
+          entityId: line.id,
+          action: priceChanged ? "PRICE_OVERRIDE" : "DISCOUNT_APPLIED",
+          userId: ctx.token ?? null,
+          previousState: {
+            unitPrice: line.unitPrice.toNumber(),
+            discount: line.lineDiscountAmount.toNumber(),
+          },
+          newState: {
+            unitPrice,
+            discount: lineDiscountAmount,
+          },
+          metadata: {
+            transactionId: line.transaction.id,
             reason: input.discountReason,
           },
         },
@@ -683,26 +705,22 @@ export const transactionsRouter = router({
       }
 
       // Calculate discount
-      const subtotal = transaction.lines.reduce((sum, line) => sum + line.lineSubtotal.toNumber(), 0);
-      let discountTotal = 0;
+      const subtotal = transaction.lines.reduce((sum, line) => sum + line.lineTotal.toNumber(), 0);
+      let totalDiscount = 0;
 
       if (input.discountAmount) {
-        discountTotal = input.discountAmount;
+        totalDiscount = input.discountAmount;
       } else if (input.discountPercent) {
-        discountTotal = subtotal * (input.discountPercent / 100);
+        totalDiscount = subtotal * (input.discountPercent / 100);
       }
 
-      // Line-level discounts
-      const lineDiscounts = transaction.lines.reduce((sum, line) => sum + line.discountAmount.toNumber(), 0);
-
-      const total = subtotal - lineDiscounts - discountTotal + transaction.taxTotal.toNumber();
+      const grandTotal = subtotal - totalDiscount + transaction.totalTax.toNumber();
 
       const updatedTransaction = await ctx.prisma.posTransaction.update({
         where: { id: transaction.id },
         data: {
-          discountTotal,
-          discountReason: input.discountReason,
-          total,
+          totalDiscount,
+          grandTotal,
         },
         include: {
           lines: true,
@@ -714,12 +732,13 @@ export const transactionsRouter = router({
       await ctx.prisma.posAuditEvent.create({
         data: {
           installationId: ctx.installationId,
-          transactionId: transaction.id,
-          eventType: "DISCOUNT_APPLIED",
-          performedBy: ctx.token ?? null,
-          details: {
+          entityType: "PosTransaction",
+          entityId: transaction.id,
+          action: "DISCOUNT_APPLIED",
+          userId: ctx.token ?? null,
+          metadata: {
             subtotal,
-            discountAmount: discountTotal,
+            discountAmount: totalDiscount,
             discountPercent: input.discountPercent,
             reason: input.discountReason,
           },
@@ -765,11 +784,6 @@ export const transactionsRouter = router({
         where: { id: transaction.id },
         data: {
           status: "SUSPENDED",
-          notes: input.suspendNote
-            ? transaction.notes
-              ? `${transaction.notes}\nSuspended: ${input.suspendNote}`
-              : `Suspended: ${input.suspendNote}`
-            : transaction.notes,
         },
         include: {
           lines: true,
@@ -803,7 +817,7 @@ export const transactionsRouter = router({
 
       const existingDraft = await ctx.prisma.posTransaction.findFirst({
         where: {
-          sessionId: session.id,
+          registerSessionId: session.id,
           status: "DRAFT",
         },
       });
@@ -856,7 +870,6 @@ export const transactionsRouter = router({
       z.object({
         transactionId: z.string().uuid(),
         voidReason: z.string().min(1).max(500),
-        voidedByName: z.string().min(1).max(255),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -893,6 +906,7 @@ export const transactionsRouter = router({
         data: {
           status: "VOIDED",
           voidedAt: new Date(),
+          voidedBy: ctx.token ?? null,
           voidReason: input.voidReason,
         },
         include: {
@@ -905,14 +919,13 @@ export const transactionsRouter = router({
       await ctx.prisma.posAuditEvent.create({
         data: {
           installationId: ctx.installationId,
-          transactionId: transaction.id,
-          eventType: "TRANSACTION_VOIDED",
-          performedBy: ctx.token ?? null,
-          performedByName: input.voidedByName,
-          details: {
+          entityType: "PosTransaction",
+          entityId: transaction.id,
+          action: "VOIDED",
+          userId: ctx.token ?? null,
+          metadata: {
             reason: input.voidReason,
-            total: transaction.total.toNumber(),
-            lineCount: transaction.total,
+            total: transaction.grandTotal.toNumber(),
           },
         },
       });
@@ -926,17 +939,17 @@ export const transactionsRouter = router({
   list: protectedClientProcedure.input(listTransactionsSchema.optional()).query(async ({ ctx, input }) => {
     const where = {
       installationId: ctx.installationId,
-      ...(input?.sessionId && { sessionId: input.sessionId }),
+      ...(input?.sessionId && { registerSessionId: input.sessionId }),
       ...(input?.status && { status: input.status }),
-      ...(input?.type && { type: input.type }),
-      ...(input?.startDate && { createdAt: { gte: input.startDate } }),
-      ...(input?.endDate && { createdAt: { lte: input.endDate } }),
+      ...(input?.type && { transactionType: input.type }),
+      ...(input?.startDate && { startedAt: { gte: input.startDate } }),
+      ...(input?.endDate && { startedAt: { lte: input.endDate } }),
     };
 
     const [transactions, total] = await Promise.all([
       ctx.prisma.posTransaction.findMany({
         where,
-        orderBy: { createdAt: "desc" },
+        orderBy: { startedAt: "desc" },
         take: input?.limit ?? 50,
         skip: input?.offset ?? 0,
         include: {
@@ -964,7 +977,7 @@ export const transactionsRouter = router({
         installationId: ctx.installationId,
         status: "SUSPENDED",
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: { startedAt: "desc" },
       include: {
         lines: true,
         _count: {
@@ -993,25 +1006,25 @@ async function recalculateTransactionTotals(
     throw new Error("Transaction not found");
   }
 
-  const subtotal = transaction.lines.reduce((sum, line) => sum + line.lineSubtotal.toNumber(), 0);
-  const lineDiscounts = transaction.lines.reduce((sum, line) => sum + line.discountAmount.toNumber(), 0);
-  const transactionDiscount = transaction.discountTotal.toNumber();
+  const subtotal = transaction.lines.reduce((sum, line) => sum + line.lineTotal.toNumber(), 0);
+  const lineDiscounts = transaction.lines.reduce((sum, line) => sum + line.lineDiscountAmount.toNumber(), 0);
+  const transactionDiscount = transaction.totalDiscount.toNumber();
 
   // TODO: Calculate tax based on store location and tax-exempt status
-  const taxTotal = 0;
+  const totalTax = 0;
 
-  const total = subtotal - lineDiscounts - transactionDiscount + taxTotal;
+  const grandTotal = subtotal - transactionDiscount + totalTax;
 
   return prisma.posTransaction.update({
     where: { id: transactionId },
     data: {
-      subtotal,
-      taxTotal,
-      total,
+      subtotal: subtotal + lineDiscounts, // Subtotal before discounts
+      totalTax,
+      grandTotal,
     },
     include: {
       lines: {
-        orderBy: { createdAt: "asc" },
+        orderBy: { lineNumber: "asc" },
       },
       payments: true,
     },

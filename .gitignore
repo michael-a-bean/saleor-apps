@@ -7,3 +7,9 @@
 !/apps/buylist
 !/apps/price-sync
 !/apps/pos
+
+# Ignore build artifacts in all apps
+apps/**/node_modules
+apps/**/.next
+apps/**/dist
+apps/**/.turbo

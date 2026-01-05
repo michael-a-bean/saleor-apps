@@ -77,4 +77,4 @@ USER nextjs
 EXPOSE 3001
 ENV PORT=3001
 
-CMD ["pnpm", "start"]
+CMD ["sh", "-c", "./node_modules/.bin/next start --port 3001"]

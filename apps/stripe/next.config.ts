@@ -1,7 +1,12 @@
 import { withSentryConfig } from "@sentry/nextjs";
 import { NextConfig } from "next";
 
+// Support BASE_PATH from environment for path-based ALB routing
+// e.g., BASE_PATH=/apps/stripe for staging deployment
+const basePath = process.env.BASE_PATH || "";
+
 const nextConfig: NextConfig = {
+  basePath: basePath || undefined,
   reactStrictMode: true,
   transpilePackages: [
     "@saleor/apps-logger",

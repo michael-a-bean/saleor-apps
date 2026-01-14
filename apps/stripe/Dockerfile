@@ -34,12 +34,15 @@ ARG DYNAMODB_MAIN_TABLE_NAME=stripe-main-table
 ARG AWS_REGION=localhost
 ARG AWS_ACCESS_KEY_ID=local
 ARG AWS_SECRET_ACCESS_KEY=local
+ARG BASE_PATH=""
 
 ENV SECRET_KEY=${SECRET_KEY}
 ENV DYNAMODB_MAIN_TABLE_NAME=${DYNAMODB_MAIN_TABLE_NAME}
 ENV AWS_REGION=${AWS_REGION}
 ENV AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
 ENV AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+ENV BASE_PATH=${BASE_PATH}
+ENV NEXT_PUBLIC_BASE_PATH=${BASE_PATH}
 
 COPY --from=deps /app ./
 
@@ -48,7 +51,9 @@ RUN echo 'SECRET_KEY=build-placeholder' > /app/apps/stripe/.env && \
     echo 'DYNAMODB_MAIN_TABLE_NAME=stripe-main-table' >> /app/apps/stripe/.env && \
     echo 'AWS_REGION=localhost' >> /app/apps/stripe/.env && \
     echo 'AWS_ACCESS_KEY_ID=local' >> /app/apps/stripe/.env && \
-    echo 'AWS_SECRET_ACCESS_KEY=local' >> /app/apps/stripe/.env
+    echo 'AWS_SECRET_ACCESS_KEY=local' >> /app/apps/stripe/.env && \
+    echo "BASE_PATH=${BASE_PATH}" >> /app/apps/stripe/.env && \
+    echo "NEXT_PUBLIC_BASE_PATH=${BASE_PATH}" >> /app/apps/stripe/.env
 
 # Build the stripe app and its dependencies
 RUN pnpm turbo run build --filter=saleor-app-payment-stripe

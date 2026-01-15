@@ -79,7 +79,9 @@ RUN cat /tmp/polyfill.ts /app/apps/stripe/src/pages/_app.tsx > /tmp/_app.tsx && 
     mv /tmp/_app.tsx /app/apps/stripe/src/pages/_app.tsx
 
 # Build the stripe app and its dependencies
-RUN pnpm turbo run build --filter=saleor-app-payment-stripe
+# Disable ESLint during build because the polyfill injection breaks import ordering rules
+ENV NEXT_LINT_DISABLED=1
+RUN cd /app/apps/stripe && pnpm next build --no-lint
 
 # Production stage
 FROM base AS runner

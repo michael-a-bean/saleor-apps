@@ -89,6 +89,7 @@ RUN rm -f .env
 USER nextjs
 
 EXPOSE 3001
+ENV HOSTNAME=0.0.0.0
 ENV PORT=3001
 
 CMD ["sh", "-c", "./node_modules/.bin/next start --port 3001"]

@@ -32,8 +32,9 @@ export const env = createEnv({
     STRIPE_PARTNER_ID: z.string().optional(),
     DYNAMODB_MAIN_TABLE_NAME: z.string(),
     AWS_REGION: z.string(),
-    AWS_ACCESS_KEY_ID: z.string(),
-    AWS_SECRET_ACCESS_KEY: z.string(),
+    // AWS credentials are optional - ECS uses task role credentials via instance metadata
+    AWS_ACCESS_KEY_ID: z.string().optional(),
+    AWS_SECRET_ACCESS_KEY: z.string().optional(),
     APPSTORE_URL: z.string().optional(),
     APP_NAME: z.string().optional().default("Stripe"),
   },

@@ -1,4 +1,4 @@
-import Document, { Head, Html, Main, NextScript, DocumentContext } from "next/document";
+import Document, { DocumentContext, Head, Html, Main, NextScript } from "next/document";
 
 /**
  * Custom document to inject crypto.randomUUID polyfill before any JavaScript loads.
@@ -13,6 +13,7 @@ import Document, { Head, Html, Main, NextScript, DocumentContext } from "next/do
 class MyDocument extends Document {
   static async getInitialProps(ctx: DocumentContext) {
     const initialProps = await Document.getInitialProps(ctx);
+
     return initialProps;
   }
 

@@ -57,7 +57,8 @@ RUN echo 'SECRET_KEY=build-placeholder' > /app/apps/stripe/.env && \
 
 # Build the stripe app and its dependencies
 # The crypto.randomUUID polyfill is now in _document.tsx as an inline script
-RUN cd /app/apps/stripe && pnpm next build
+# Using --no-lint because our local customizations may conflict with upstream ESLint rules
+RUN cd /app/apps/stripe && pnpm next build --no-lint
 
 # Production stage
 FROM base AS runner

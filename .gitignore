@@ -7,6 +7,8 @@
 !/apps/buylist
 !/apps/price-sync
 !/apps/pos
+# Track Stripe Dockerfile for HTTP staging polyfill patch
+!/apps/stripe/Dockerfile
 
 # Ignore build artifacts in all apps
 apps/**/node_modules

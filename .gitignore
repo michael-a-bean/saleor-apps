@@ -7,8 +7,16 @@
 !/apps/buylist
 !/apps/price-sync
 !/apps/pos
-# Track Stripe Dockerfile for HTTP staging polyfill patch
+# Track Stripe app customizations for HTTP staging
+!/apps/stripe
+/apps/stripe/*
 !/apps/stripe/Dockerfile
+!/apps/stripe/src
+/apps/stripe/src/*
+!/apps/stripe/src/pages
+/apps/stripe/src/pages/*
+!/apps/stripe/src/pages/_document.tsx
+!/apps/stripe/src/pages/_app.tsx
 
 # Ignore build artifacts in all apps
 apps/**/node_modules

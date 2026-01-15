@@ -80,6 +80,10 @@ COPY --from=builder /app/apps/stripe ./apps/stripe
 
 WORKDIR /app/apps/stripe
 
+# Remove build-time .env file that contains placeholder AWS credentials
+# This allows the AWS SDK to use ECS task role credentials at runtime
+RUN rm -f .env
+
 USER nextjs
 
 EXPOSE 3001

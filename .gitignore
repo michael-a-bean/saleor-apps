@@ -23,12 +23,9 @@
 /packages/*
 !/packages/trpc
 /packages/trpc/*
-!/packages/trpc/package.json
-!/packages/trpc/vitest.config.ts
 !/packages/trpc/src
 /packages/trpc/src/*
 !/packages/trpc/src/http-batch-link.ts
-!/packages/trpc/src/http-batch-link.test.ts
 
 # Ignore build artifacts in all apps
 apps/**/node_modules

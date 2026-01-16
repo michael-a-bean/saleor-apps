@@ -10,14 +10,9 @@
   "scripts": {
     "check-types": "tsc",
     "lint": "eslint .",
-    "lint:fix": "eslint --fix .",
-    "test": "vitest",
-    "test:ci": "vitest run --coverage"
+    "lint:fix": "eslint --fix ."
   },
   "devDependencies": {
-    "@vitest/coverage-v8": "catalog:",
-    "vite": "catalog:",
-    "vitest": "catalog:",
     "@saleor/app-sdk": "link:../../node_modules/@saleor/app-sdk",
     "@saleor/apps-shared": "workspace:*",
     "@saleor/eslint-config-apps": "workspace:*",

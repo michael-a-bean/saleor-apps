@@ -17,6 +17,15 @@
 /apps/stripe/src/pages/*
 !/apps/stripe/src/pages/_document.tsx
 !/apps/stripe/src/pages/_app.tsx
+# Track App Router API routes (health, tRPC root for smoke tests)
+!/apps/stripe/src/app
+/apps/stripe/src/app/*
+!/apps/stripe/src/app/api
+/apps/stripe/src/app/api/*
+!/apps/stripe/src/app/api/health
+!/apps/stripe/src/app/api/trpc
+/apps/stripe/src/app/api/trpc/*
+!/apps/stripe/src/app/api/trpc/route.ts
 
 # Track shared trpc package for basePath fix (critical for ALB routing)
 !/packages

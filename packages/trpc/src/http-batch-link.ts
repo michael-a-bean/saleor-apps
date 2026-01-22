@@ -65,6 +65,7 @@ export function getBasePath(options?: { warnIfMissing?: boolean }): string {
 
   // Warn if basePath appears to be missing in production
   if (options?.warnIfMissing && !normalized && process.env.NODE_ENV === "production") {
+    // eslint-disable-next-line no-console -- Intentional: browser-visible warning for deployment debugging
     console.warn(
       "[tRPC] NEXT_PUBLIC_BASE_PATH is not set in production build. " +
         "If this app is deployed behind a path-based router (e.g., ALB with /apps/stripe), " +

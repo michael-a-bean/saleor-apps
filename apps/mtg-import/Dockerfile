@@ -52,27 +52,30 @@ RUN echo "BASE_PATH=${BASE_PATH}" > /app/apps/mtg-import/.env && \
 ENV SKIP_ENV_VALIDATION=true
 RUN pnpm turbo run build --filter=saleor-app-mtg-import
 
-# Production stage - use standalone output for smaller image
+# Production stage
 FROM base AS runner
 WORKDIR /app
 
-# Install openssl for Prisma
-RUN apk add --no-cache openssl
+# Install curl for health checks, openssl for Prisma
+RUN apk add --no-cache curl openssl
 
 ENV NODE_ENV=production
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+RUN corepack enable
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
-# Copy standalone build output
-COPY --from=builder --chown=nextjs:nodejs /app/apps/mtg-import/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/apps/mtg-import/.next/static ./apps/mtg-import/.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/apps/mtg-import/public ./apps/mtg-import/public
+# Copy built application with correct ownership
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=nextjs:nodejs /app/packages ./packages
+COPY --from=builder --chown=nextjs:nodejs /app/apps/mtg-import ./apps/mtg-import
 
-# Copy Prisma files for database access
-COPY --from=builder --chown=nextjs:nodejs /app/apps/mtg-import/prisma ./apps/mtg-import/prisma
-COPY --from=builder --chown=nextjs:nodejs /app/apps/mtg-import/node_modules/.prisma ./apps/mtg-import/node_modules/.prisma
-COPY --from=builder --chown=nextjs:nodejs /app/apps/mtg-import/node_modules/@prisma ./apps/mtg-import/node_modules/@prisma
+WORKDIR /app/apps/mtg-import
+
+# Create data directory for APL storage with correct ownership
+RUN mkdir -p data && chown nextjs:nodejs data
 
 # Create cache directory for Scryfall data
 RUN mkdir -p /tmp/scryfall-cache && chown nextjs:nodejs /tmp/scryfall-cache
@@ -83,5 +86,4 @@ EXPOSE 3005
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3005
 
-# Run standalone server (required for output: "standalone")
-CMD ["node", "apps/mtg-import/server.js"]
+CMD ["pnpm", "start"]

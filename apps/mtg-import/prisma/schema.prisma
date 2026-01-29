@@ -1,0 +1,176 @@
+// MTG Import App - Database Schema
+// PostgreSQL with Prisma ORM
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Multi-tenant support - all tables scoped by saleorApiUrl + appId
+model AppInstallation {
+  id           String   @id @default(uuid())
+  saleorApiUrl String
+  appId        String
+  installedAt  DateTime @default(now())
+
+  // Import jobs
+  importJobs      ImportJob[]
+  importedProducts ImportedProduct[]
+  setAudits       SetAudit[]
+
+  @@unique([saleorApiUrl, appId])
+  @@index([saleorApiUrl])
+}
+
+// Job Type Enum - Types of import/maintenance jobs
+enum JobType {
+  BULK_IMPORT       // Initial full import from Scryfall
+  NEW_SET           // Import a newly released set
+  ATTRIBUTE_ENRICHMENT // Fill in missing attributes
+  CHANNEL_SYNC      // Sync channel listings
+  RECONCILIATION    // Compare and fix drift
+  AUDIT             // Verify set completeness
+  REMEDIATION       // Fix issues found by audit
+}
+
+// Job Status State Machine
+// PENDING -> RUNNING -> COMPLETED
+// PENDING -> RUNNING -> FAILED
+// PENDING -> CANCELLED
+enum JobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+// Import Job Queue
+model ImportJob {
+  id             String          @id @default(uuid())
+  installationId String
+  installation   AppInstallation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+
+  jobType  JobType
+  status   JobStatus @default(PENDING)
+
+  // Priority: 0 = prerelease (highest), 1 = reprint/standard, 2 = backfill (lowest)
+  priority Int @default(1)
+
+  // Progress tracking
+  progress    Int  @default(0)  // Number of items processed
+  totalItems  Int?              // Total items to process (if known)
+
+  // Checkpoint for resume capability
+  // Stores: { lastProcessedId, lastSetCode, lastPage, etc. }
+  checkpoint Json?
+
+  // Job configuration (e.g., setCode for NEW_SET jobs)
+  config Json?
+
+  // Error information
+  error String? @db.Text
+  errorCount Int @default(0)
+
+  // Logs (append-only for debugging)
+  logs Json[] @default([])
+
+  // Timestamps
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  @@index([installationId, status])
+  @@index([status, priority])  // For job queue polling
+  @@index([jobType])
+}
+
+// Attribute Status - tracks what level of data we have for a product
+enum AttributeStatus {
+  BASE       // Only core fields (name, SKU, basic info)
+  ENRICHED   // All MTG attributes filled in
+}
+
+// Track imported products for idempotency and reconciliation
+model ImportedProduct {
+  id             String          @id @default(uuid())
+  installationId String
+  installation   AppInstallation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+
+  // Scryfall identifiers
+  scryfallId   String  // Scryfall card UUID
+  oracleId     String? // Links all reprints of a card
+  tcgplayerId  Int?    // TCGPlayer ID for price sync
+
+  // Saleor identifiers
+  saleorProductId String
+
+  // Set information
+  setCode String
+  setName String?
+
+  // Card details (cached for audit/search)
+  cardName     String
+  collectorNumber String
+
+  // Status tracking
+  attributeStatus AttributeStatus @default(BASE)
+
+  // Variant tracking (how many variants created)
+  variantCount Int @default(0)
+
+  // Timestamps
+  lastSyncedAt DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([installationId, scryfallId])
+  @@index([installationId, setCode])
+  @@index([installationId, attributeStatus])
+  @@index([saleorProductId])
+}
+
+// Set Audit - Track completeness per set
+model SetAudit {
+  id             String          @id @default(uuid())
+  installationId String
+  installation   AppInstallation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+
+  // Set identification
+  setCode String
+  setName String
+
+  // Scryfall source data
+  scryfallCardCount Int  // Total cards in set according to Scryfall
+
+  // Saleor counts
+  saleorProductCount Int @default(0)  // Products in Saleor for this set
+  saleorVariantCount Int @default(0)  // Variants in Saleor for this set
+
+  // "Sellable Completeness" metrics
+  pricedCount  Int @default(0)  // Variants with pricing
+  indexedCount Int @default(0)  // Variants in Meilisearch
+
+  // Audit results
+  missingCards    Json @default("[]")  // Array of Scryfall IDs not in Saleor
+  missingVariants Json @default("[]")  // Array of {productId, missingFinishes}
+  pricingGaps     Json @default("[]")  // Array of variants without pricing
+
+  // Sellable timestamp - when set became fully sellable
+  // (all products exist + priced + indexed)
+  sellableTimestamp DateTime?
+
+  // Timestamps
+  auditedAt DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([installationId, setCode])
+  @@index([installationId])
+  @@index([sellableTimestamp])
+}

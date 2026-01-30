@@ -7,6 +7,7 @@
 !/apps/buylist
 !/apps/price-sync
 !/apps/pos
+!/apps/mtg-import
 # Track Stripe app customizations for HTTP staging
 !/apps/stripe
 /apps/stripe/*

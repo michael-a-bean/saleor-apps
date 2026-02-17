@@ -10,6 +10,7 @@ export const createTrpcContextAppRouter = async ({ req }: FetchCreateContextFnOp
     token: req.headers.get(SALEOR_AUTHORIZATION_BEARER_HEADER) as string | undefined,
     saleorApiUrl: req.headers.get(SALEOR_API_URL_HEADER) as string | undefined,
     appId: undefined as undefined | string,
+    appToken: undefined as undefined | string,
     apiClient: null as Client | null,
     prisma: prisma as PrismaClient,
     appUrl: req.headers.get("origin"),

@@ -44,7 +44,7 @@ const attachAppToken = middleware(async ({ ctx, next }) => {
 const attachSharedServices = middleware(async ({ ctx, next }) => {
   const gqlClient = createInstrumentedGraphqlClient({
     saleorApiUrl: ctx.saleorApiUrl!,
-    token: ctx.token!,
+    token: ctx.appToken!,
   });
 
   return next({

@@ -15,6 +15,7 @@ import type { Client } from "urql";
 import { createLogger } from "@/lib/logger";
 import type { ScryfallCard } from "../scryfall/types";
 import { ScryfallClient, BulkDataManager, retailPaperFilter } from "../scryfall";
+import { MtgjsonBulkDataManager } from "../mtgjson";
 import { SaleorImportClient } from "../saleor";
 import { buildAttributeIdMap } from "./attribute-map";
 import { cardToProductInput, batchCards, type PipelineOptions } from "./pipeline";
@@ -30,6 +31,8 @@ export interface ProcessorConfig {
   prisma: PrismaClient;
   gqlClient: Client;
   batchSize?: number;
+  /** Optional MTGJSON fallback for when Scryfall is unavailable */
+  mtgjsonBulkManager?: MtgjsonBulkDataManager;
 }
 
 export interface ProcessResult {
@@ -45,6 +48,7 @@ export class JobProcessor {
   private readonly prisma: PrismaClient;
   private readonly saleor: SaleorImportClient;
   private readonly batchSize: number;
+  private readonly mtgjsonBulk: MtgjsonBulkDataManager | null;
   private abortController: AbortController | null = null;
 
   constructor(config: ProcessorConfig) {
@@ -53,6 +57,7 @@ export class JobProcessor {
     this.prisma = config.prisma;
     this.saleor = new SaleorImportClient(config.gqlClient);
     this.batchSize = config.batchSize ?? DEFAULT_BATCH_SIZE;
+    this.mtgjsonBulk = config.mtgjsonBulkManager ?? null;
   }
 
   /** Process a single import job */
@@ -180,11 +185,43 @@ export class JobProcessor {
 
   private getCardStream(job: ImportJob): AsyncIterable<ScryfallCard> {
     if (job.type === "SET" && job.setCode) {
-      // On-demand set import: stream only cards from this set
-      return this.bulkData.streamSet(job.setCode);
+      return this.streamSetWithFallback(job.setCode);
     }
-    // Bulk import: stream all cards
-    return this.bulkData.streamCards();
+    return this.streamAllWithFallback();
+  }
+
+  /**
+   * Stream all cards with MTGJSON fallback if Scryfall fails.
+   */
+  private async *streamAllWithFallback(): AsyncGenerator<ScryfallCard> {
+    try {
+      yield* this.bulkData.streamCards();
+    } catch (error) {
+      if (this.mtgjsonBulk) {
+        const msg = error instanceof Error ? error.message : String(error);
+        logger.warn("Scryfall bulk stream failed, falling back to MTGJSON", { error: msg });
+        yield* this.mtgjsonBulk.streamCards();
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  /**
+   * Stream cards from a set with MTGJSON fallback if Scryfall fails.
+   */
+  private async *streamSetWithFallback(setCode: string): AsyncGenerator<ScryfallCard> {
+    try {
+      yield* this.bulkData.streamSet(setCode);
+    } catch (error) {
+      if (this.mtgjsonBulk) {
+        const msg = error instanceof Error ? error.message : String(error);
+        logger.warn("Scryfall set stream failed, falling back to MTGJSON", { setCode, error: msg });
+        yield* this.mtgjsonBulk.streamSet(setCode);
+      } else {
+        throw error;
+      }
+    }
   }
 
   private async processBatch(

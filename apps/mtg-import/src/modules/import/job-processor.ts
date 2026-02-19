@@ -33,12 +33,15 @@ export interface ProcessorConfig {
   batchSize?: number;
   /** Optional MTGJSON fallback for when Scryfall is unavailable */
   mtgjsonBulkManager?: MtgjsonBulkDataManager;
+  /** Optional pre-built import client (for testing) */
+  saleorImportClient?: SaleorImportClient;
 }
 
 export interface ProcessResult {
   cardsProcessed: number;
   variantsCreated: number;
   errors: number;
+  skipped: number;
   errorLog: string[];
 }
 
@@ -55,7 +58,7 @@ export class JobProcessor {
     this.scryfall = config.scryfallClient;
     this.bulkData = config.bulkDataManager;
     this.prisma = config.prisma;
-    this.saleor = new SaleorImportClient(config.gqlClient);
+    this.saleor = config.saleorImportClient ?? new SaleorImportClient(config.gqlClient);
     this.batchSize = config.batchSize ?? DEFAULT_BATCH_SIZE;
     this.mtgjsonBulk = config.mtgjsonBulkManager ?? null;
   }
@@ -67,6 +70,7 @@ export class JobProcessor {
       cardsProcessed: 0,
       variantsCreated: 0,
       errors: 0,
+      skipped: 0,
       errorLog: [],
     };
 
@@ -155,6 +159,7 @@ export class JobProcessor {
       logger.info("Import job complete", {
         jobId: job.id,
         ...result,
+        ...(result.skipped > 0 ? { note: `${result.skipped} products already existed in Saleor` } : {}),
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -182,6 +187,14 @@ export class JobProcessor {
   }
 
   // --- Private ---
+
+  /** Check if all errors in a row are slug uniqueness violations (product already exists) */
+  private isSlugDuplicateError(errors: Array<{ message: string | null; code: string; path: string | null }>): boolean {
+    return (
+      errors.length > 0 &&
+      errors.every((e) => e.code === "UNIQUE" && (e.path === "slug" || e.message?.includes("Slug already exists")))
+    );
+  }
 
   private getCardStream(job: ImportJob): AsyncIterable<ScryfallCard> {
     if (job.type === "SET" && job.setCode) {
@@ -264,6 +277,30 @@ export class JobProcessor {
               saleorProductId: row.product.id,
               variantCount: row.product.variants.length,
               success: true,
+            },
+          });
+        } else if (this.isSlugDuplicateError(row.errors)) {
+          // Product already exists in Saleor — treat as successful (idempotent retry)
+          result.cardsProcessed++;
+          result.skipped++;
+
+          logger.debug("Product already exists, skipping", {
+            card: card.name,
+            set: card.set,
+            collector: card.collector_number,
+          });
+
+          await this.prisma.importedProduct.create({
+            data: {
+              importJobId: job.id,
+              scryfallId: card.id,
+              cardName: card.name.substring(0, 250),
+              setCode: card.set,
+              collectorNumber: card.collector_number,
+              rarity: card.rarity,
+              saleorProductId: "existing",
+              success: true,
+              errorMessage: "Already exists in Saleor (duplicate slug)",
             },
           });
         } else {

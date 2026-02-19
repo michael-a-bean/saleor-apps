@@ -127,7 +127,29 @@ function makeBulkCreateResultWithErrors(successCount: number, errorCount: number
   for (let i = 0; i < errorCount; i++) {
     results.push({
       product: null,
-      errors: [{ message: "Slug already exists", code: "UNIQUE", path: null }],
+      errors: [{ message: "Invalid product data", code: "INVALID", path: "name" }],
+    });
+  }
+  return { count: successCount, results, errors: [] };
+}
+
+function makeBulkCreateResultWithDuplicates(successCount: number, duplicateCount: number) {
+  const results = [];
+  for (let i = 0; i < successCount; i++) {
+    results.push({
+      product: {
+        id: `prod-${i}`,
+        name: `Product ${i}`,
+        slug: `product-${i}`,
+        variants: [{ id: `var-${i}`, sku: `sku-${i}`, name: "NM - NF" }],
+      },
+      errors: [],
+    });
+  }
+  for (let i = 0; i < duplicateCount; i++) {
+    results.push({
+      product: null,
+      errors: [{ message: "Product with this Slug already exists.", code: "UNIQUE", path: "slug" }],
     });
   }
   return { count: successCount, results, errors: [] };
@@ -148,16 +170,14 @@ function createMocks(cards: ScryfallCard[] = []) {
 
   const mockGqlClient = {};
 
-  // Mock the SaleorImportClient that JobProcessor creates internally
+  // Create mock SaleorImportClient directly (injected via saleorImportClient config)
   const mockResolveImportContext = vi.fn().mockResolvedValue(mockContext);
   const mockBulkCreateProducts = vi.fn().mockResolvedValue(makeBulkCreateResult(cards.length));
 
-  vi.doMock("@/modules/saleor", () => ({
-    SaleorImportClient: vi.fn().mockImplementation(() => ({
-      resolveImportContext: mockResolveImportContext,
-      bulkCreateProducts: mockBulkCreateProducts,
-    })),
-  }));
+  const mockSaleorImportClient = {
+    resolveImportContext: mockResolveImportContext,
+    bulkCreateProducts: mockBulkCreateProducts,
+  };
 
   // Create async generator from card array
   async function* cardGenerator() {
@@ -178,6 +198,7 @@ function createMocks(cards: ScryfallCard[] = []) {
     gqlClient: mockGqlClient,
     bulkData: mockBulkData,
     scryfallClient: mockScryfallClient,
+    saleorImportClient: mockSaleorImportClient,
     resolveImportContext: mockResolveImportContext,
     bulkCreateProducts: mockBulkCreateProducts,
   };
@@ -199,6 +220,7 @@ describe("JobProcessor", () => {
         bulkDataManager: mocks.bulkData as any,
         prisma: mocks.prisma as any,
         gqlClient: mocks.gqlClient as any,
+        saleorImportClient: mocks.saleorImportClient as any,
       });
 
       await processor.processJob(makeJob());
@@ -219,6 +241,7 @@ describe("JobProcessor", () => {
         bulkDataManager: mocks.bulkData as any,
         prisma: mocks.prisma as any,
         gqlClient: mocks.gqlClient as any,
+        saleorImportClient: mocks.saleorImportClient as any,
       });
 
       await processor.processJob(makeJob());
@@ -239,6 +262,7 @@ describe("JobProcessor", () => {
         bulkDataManager: mocks.bulkData as any,
         prisma: mocks.prisma as any,
         gqlClient: mocks.gqlClient as any,
+        saleorImportClient: mocks.saleorImportClient as any,
       });
 
       await processor.processJob(makeJob());
@@ -257,6 +281,7 @@ describe("JobProcessor", () => {
         bulkDataManager: mocks.bulkData as any,
         prisma: mocks.prisma as any,
         gqlClient: mocks.gqlClient as any,
+        saleorImportClient: mocks.saleorImportClient as any,
       });
 
       await processor.processJob(makeJob());
@@ -277,6 +302,7 @@ describe("JobProcessor", () => {
         bulkDataManager: mocks.bulkData as any,
         prisma: mocks.prisma as any,
         gqlClient: mocks.gqlClient as any,
+        saleorImportClient: mocks.saleorImportClient as any,
       });
 
       await processor.processJob(makeJob({ type: "SET" as any, setCode: "m11" }));
@@ -293,6 +319,7 @@ describe("JobProcessor", () => {
         bulkDataManager: mocks.bulkData as any,
         prisma: mocks.prisma as any,
         gqlClient: mocks.gqlClient as any,
+        saleorImportClient: mocks.saleorImportClient as any,
       });
 
       await processor.processJob(makeJob({ type: "BULK" as any, setCode: null }));
@@ -313,6 +340,7 @@ describe("JobProcessor", () => {
         bulkDataManager: mocks.bulkData as any,
         prisma: mocks.prisma as any,
         gqlClient: mocks.gqlClient as any,
+        saleorImportClient: mocks.saleorImportClient as any,
       });
 
       await processor.processJob(makeJob());
@@ -333,13 +361,14 @@ describe("JobProcessor", () => {
         bulkDataManager: mocks.bulkData as any,
         prisma: mocks.prisma as any,
         gqlClient: mocks.gqlClient as any,
+        saleorImportClient: mocks.saleorImportClient as any,
       });
 
       await processor.processJob(makeJob());
 
       const call = mocks.prisma.importedProduct.create.mock.calls[0][0];
       expect(call.data.success).toBe(false);
-      expect(call.data.errorMessage).toContain("Slug already exists");
+      expect(call.data.errorMessage).toContain("Invalid product data");
     });
 
     it("returns correct process result counts", async () => {
@@ -352,6 +381,7 @@ describe("JobProcessor", () => {
         bulkDataManager: mocks.bulkData as any,
         prisma: mocks.prisma as any,
         gqlClient: mocks.gqlClient as any,
+        saleorImportClient: mocks.saleorImportClient as any,
       });
 
       const result = await processor.processJob(makeJob());
@@ -376,6 +406,7 @@ describe("JobProcessor", () => {
         bulkDataManager: mocks.bulkData as any,
         prisma: mocks.prisma as any,
         gqlClient: mocks.gqlClient as any,
+        saleorImportClient: mocks.saleorImportClient as any,
       });
 
       const result = await processor.processJob(makeJob({ lastCheckpoint: "2" }));
@@ -395,6 +426,7 @@ describe("JobProcessor", () => {
         bulkDataManager: mocks.bulkData as any,
         prisma: mocks.prisma as any,
         gqlClient: mocks.gqlClient as any,
+        saleorImportClient: mocks.saleorImportClient as any,
       });
 
       const result = await processor.processJob(makeJob());
@@ -414,6 +446,7 @@ describe("JobProcessor", () => {
         bulkDataManager: mocks.bulkData as any,
         prisma: mocks.prisma as any,
         gqlClient: mocks.gqlClient as any,
+        saleorImportClient: mocks.saleorImportClient as any,
       });
 
       const result = await processor.processJob(makeJob());
@@ -438,12 +471,117 @@ describe("JobProcessor", () => {
         bulkDataManager: mocks.bulkData as any,
         prisma: mocks.prisma as any,
         gqlClient: mocks.gqlClient as any,
+        saleorImportClient: mocks.saleorImportClient as any,
       });
 
       const result = await processor.processJob(makeJob());
 
       // Only 1 card should be processed (the paper one)
       expect(result.cardsProcessed).toBe(1);
+    });
+  });
+
+  describe("processJob — idempotent retry (duplicate handling)", () => {
+    it("treats slug duplicate errors as skipped, not failures", async () => {
+      const cards = [makeCard({ name: "Existing Card" })];
+      const mocks = createMocks(cards);
+      mocks.bulkCreateProducts.mockResolvedValue(makeBulkCreateResultWithDuplicates(0, 1));
+
+      const processor = new JobProcessor({
+        scryfallClient: mocks.scryfallClient as any,
+        bulkDataManager: mocks.bulkData as any,
+        prisma: mocks.prisma as any,
+        gqlClient: mocks.gqlClient as any,
+        saleorImportClient: mocks.saleorImportClient as any,
+      });
+
+      const result = await processor.processJob(makeJob());
+
+      expect(result.cardsProcessed).toBe(1);
+      expect(result.skipped).toBe(1);
+      expect(result.errors).toBe(0);
+      expect(result.errorLog).toHaveLength(0);
+    });
+
+    it("marks job as COMPLETED when all cards are duplicates", async () => {
+      const cards = [makeCard(), makeCard(), makeCard()];
+      const mocks = createMocks(cards);
+      mocks.bulkCreateProducts.mockResolvedValue(makeBulkCreateResultWithDuplicates(0, 3));
+
+      const processor = new JobProcessor({
+        scryfallClient: mocks.scryfallClient as any,
+        bulkDataManager: mocks.bulkData as any,
+        prisma: mocks.prisma as any,
+        gqlClient: mocks.gqlClient as any,
+        saleorImportClient: mocks.saleorImportClient as any,
+      });
+
+      await processor.processJob(makeJob());
+
+      const lastCall = mocks.prisma.importJob.update.mock.calls.at(-1)![0];
+      expect(lastCall.data.status).toBe("COMPLETED");
+      expect(lastCall.data.cardsProcessed).toBe(3);
+    });
+
+    it("records ImportedProduct with success=true for duplicates", async () => {
+      const cards = [makeCard({ name: "Duplicate Card" })];
+      const mocks = createMocks(cards);
+      mocks.bulkCreateProducts.mockResolvedValue(makeBulkCreateResultWithDuplicates(0, 1));
+
+      const processor = new JobProcessor({
+        scryfallClient: mocks.scryfallClient as any,
+        bulkDataManager: mocks.bulkData as any,
+        prisma: mocks.prisma as any,
+        gqlClient: mocks.gqlClient as any,
+        saleorImportClient: mocks.saleorImportClient as any,
+      });
+
+      await processor.processJob(makeJob());
+
+      const call = mocks.prisma.importedProduct.create.mock.calls[0][0];
+      expect(call.data.success).toBe(true);
+      expect(call.data.saleorProductId).toBe("existing");
+      expect(call.data.errorMessage).toContain("Already exists");
+    });
+
+    it("handles mixed batch: new products + duplicates + real errors", async () => {
+      const cards = [makeCard({ name: "New" }), makeCard({ name: "Existing" }), makeCard({ name: "Bad" })];
+      const mocks = createMocks(cards);
+      mocks.bulkCreateProducts.mockResolvedValue({
+        count: 1,
+        results: [
+          {
+            product: { id: "prod-0", name: "New", slug: "new", variants: [{ id: "v-0", sku: "sku-0", name: "NM" }] },
+            errors: [],
+          },
+          {
+            product: null,
+            errors: [{ message: "Product with this Slug already exists.", code: "UNIQUE", path: "slug" }],
+          },
+          {
+            product: null,
+            errors: [{ message: "Invalid attribute value", code: "INVALID", path: "attributes" }],
+          },
+        ],
+        errors: [],
+      });
+
+      const processor = new JobProcessor({
+        scryfallClient: mocks.scryfallClient as any,
+        bulkDataManager: mocks.bulkData as any,
+        prisma: mocks.prisma as any,
+        gqlClient: mocks.gqlClient as any,
+        saleorImportClient: mocks.saleorImportClient as any,
+      });
+
+      const result = await processor.processJob(makeJob());
+
+      expect(result.cardsProcessed).toBe(2); // new + duplicate
+      expect(result.skipped).toBe(1);        // duplicate only
+      expect(result.errors).toBe(1);          // real error only
+      expect(result.variantsCreated).toBe(1); // only the new product
+      expect(result.errorLog).toHaveLength(1);
+      expect(result.errorLog[0]).toContain("Invalid attribute value");
     });
   });
 
@@ -455,6 +593,7 @@ describe("JobProcessor", () => {
         bulkDataManager: mocks.bulkData as any,
         prisma: mocks.prisma as any,
         gqlClient: mocks.gqlClient as any,
+        saleorImportClient: mocks.saleorImportClient as any,
       });
 
       // cancel before processJob should not throw

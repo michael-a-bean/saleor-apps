@@ -84,7 +84,7 @@ export class SaleorImportClient {
   }
 
   /** Find the MTG Cards category */
-  async getCategory(slug: string = "mtg-cards"): Promise<SaleorCategory> {
+  async getCategory(slug: string = "mtg-singles"): Promise<SaleorCategory> {
     const result = await this.client
       .query(CATEGORIES_QUERY, { filter: { search: slug } })
       .toPromise();

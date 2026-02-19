@@ -150,7 +150,7 @@ describe("SaleorImportClient", () => {
 
   describe("getCategory", () => {
     it("finds category by slug", async () => {
-      const mockCat = { id: "cat-1", name: "MTG Cards", slug: "mtg-cards" };
+      const mockCat = { id: "cat-1", name: "MTG Singles", slug: "mtg-singles" };
       const client = {
         query: vi.fn().mockReturnValue({
           toPromise: vi.fn().mockResolvedValue({
@@ -163,7 +163,7 @@ describe("SaleorImportClient", () => {
       const saleor = new SaleorImportClient(client as any);
       const cat = await saleor.getCategory();
 
-      expect(cat.slug).toBe("mtg-cards");
+      expect(cat.slug).toBe("mtg-singles");
     });
 
     it("throws when category not found", async () => {
@@ -177,7 +177,7 @@ describe("SaleorImportClient", () => {
       };
 
       const saleor = new SaleorImportClient(client as any);
-      await expect(saleor.getCategory()).rejects.toThrow('Category "mtg-cards" not found');
+      await expect(saleor.getCategory()).rejects.toThrow('Category "mtg-singles" not found');
     });
   });
 

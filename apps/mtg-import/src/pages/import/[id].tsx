@@ -80,6 +80,7 @@ const JobDetailPage: NextPage = () => {
             <StatBox label="Cards Processed" value={String(job.cardsProcessed)} />
             <StatBox label="Cards Total" value={String(job.cardsTotal || "—")} />
             <StatBox label="Variants Created" value={String(job.variantsCreated)} />
+            <StatBox label="Already Existed" value={job.skipped > 0 ? String(job.skipped) : "—"} />
             <StatBox label="Errors" value={String(job.errors)} />
           </Box>
 

@@ -18,7 +18,9 @@ type StatusColorKey = keyof typeof statusColors;
 const ImportJobsPage: NextPage = () => {
   const router = useRouter();
   const utils = trpcClient.useUtils();
-  const { data, isLoading, error } = trpcClient.jobs.list.useQuery({});
+  const { data, isLoading, error } = trpcClient.jobs.list.useQuery({}, {
+    refetchInterval: 5000,
+  });
 
   const cancelMutation = trpcClient.jobs.cancel.useMutation({
     onSuccess: () => utils.jobs.list.invalidate(),
@@ -52,6 +54,7 @@ const ImportJobsPage: NextPage = () => {
         sideContent={
           <Text>
             Import jobs process in priority order. Cancel running jobs or retry failed ones.
+            List auto-refreshes every 5 seconds.
           </Text>
         }
       >
@@ -80,6 +83,9 @@ const ImportJobsPage: NextPage = () => {
                   </Box>
                   <Box as="th" padding={2} textAlign="right">
                     <Text fontWeight="bold">Progress</Text>
+                  </Box>
+                  <Box as="th" padding={2} textAlign="right">
+                    <Text fontWeight="bold">Skipped</Text>
                   </Box>
                   <Box as="th" padding={2} textAlign="right">
                     <Text fontWeight="bold">Errors</Text>
@@ -136,6 +142,11 @@ const ImportJobsPage: NextPage = () => {
                           </Box>
                         </Box>
                       )}
+                    </Box>
+                    <Box as="td" padding={2} textAlign="right">
+                      <Text color={job.skipped > 0 ? "default2" : undefined}>
+                        {job.skipped > 0 ? job.skipped : "—"}
+                      </Text>
                     </Box>
                     <Box as="td" padding={2} textAlign="right">
                       <Text color={job.errors > 0 ? "critical1" : undefined}>

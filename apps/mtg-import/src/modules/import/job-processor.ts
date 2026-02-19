@@ -143,18 +143,26 @@ export class JobProcessor {
       }
 
       // Mark job complete
+      const finalStatus = result.errors > 0 && result.cardsProcessed === 0 ? "FAILED" : "COMPLETED";
+
       await this.prisma.importJob.update({
         where: { id: job.id },
         data: {
-          status: result.errors > 0 && result.cardsProcessed === 0 ? "FAILED" : "COMPLETED",
+          status: finalStatus,
           completedAt: new Date(),
           cardsProcessed: result.cardsProcessed,
           cardsTotal: totalCards,
           variantsCreated: result.variantsCreated,
           errors: result.errors,
+          skipped: result.skipped,
           errorLog: JSON.stringify(result.errorLog.slice(0, 100)),
         },
       });
+
+      // Update SetAudit for completed SET imports
+      if (finalStatus === "COMPLETED" && job.type === "SET" && job.setCode) {
+        await this.updateSetAudit(job);
+      }
 
       logger.info("Import job complete", {
         jobId: job.id,
@@ -173,6 +181,7 @@ export class JobProcessor {
           cardsProcessed: result.cardsProcessed,
           variantsCreated: result.variantsCreated,
           errors: result.errors,
+          skipped: result.skipped,
           errorLog: JSON.stringify(result.errorLog.slice(0, 100)),
         },
       });
@@ -353,5 +362,87 @@ export class JobProcessor {
       },
     });
     logger.debug("Checkpoint saved", { jobId, totalProcessed });
+  }
+
+  /** Update SetAudit with aggregated import results for a set */
+  private async updateSetAudit(job: ImportJob): Promise<void> {
+    if (!job.setCode) return;
+
+    try {
+      // Count successful imports for this set across all jobs
+      const importedCards = await this.prisma.importedProduct.count({
+        where: {
+          setCode: job.setCode,
+          success: true,
+          saleorProductId: { not: "existing" },
+        },
+      });
+
+      // Get set metadata from Scryfall
+      let setName = job.setCode.toUpperCase();
+      let totalCards = 0;
+      let releasedAt: Date | null = null;
+      let setType: string | null = null;
+      let iconSvgUri: string | null = null;
+
+      try {
+        const scryfallSet = await this.scryfall.getSet(job.setCode);
+        setName = scryfallSet.name;
+        totalCards = scryfallSet.card_count;
+        releasedAt = scryfallSet.released_at ? new Date(scryfallSet.released_at) : null;
+        setType = scryfallSet.set_type;
+        iconSvgUri = scryfallSet.icon_svg_uri;
+      } catch {
+        // Fallback to job data if Scryfall unavailable
+        totalCards = job.cardsTotal;
+      }
+
+      // Also count duplicates as imported (they exist in Saleor)
+      const duplicateCount = await this.prisma.importedProduct.count({
+        where: {
+          setCode: job.setCode,
+          success: true,
+          saleorProductId: "existing",
+        },
+      });
+
+      await this.prisma.setAudit.upsert({
+        where: {
+          installationId_setCode: {
+            installationId: job.installationId,
+            setCode: job.setCode,
+          },
+        },
+        update: {
+          importedCards: importedCards + duplicateCount,
+          totalCards,
+          lastImportedAt: new Date(),
+          setName,
+          releasedAt,
+          setType,
+          iconSvgUri,
+        },
+        create: {
+          installationId: job.installationId,
+          setCode: job.setCode,
+          setName,
+          totalCards,
+          importedCards: importedCards + duplicateCount,
+          lastImportedAt: new Date(),
+          releasedAt,
+          setType,
+          iconSvgUri,
+        },
+      });
+
+      logger.info("SetAudit updated", {
+        setCode: job.setCode,
+        importedCards: importedCards + duplicateCount,
+        totalCards,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn("Failed to update SetAudit", { setCode: job.setCode, error: msg });
+    }
   }
 }

@@ -288,6 +288,65 @@ const setsRouter = router({
     });
     return audits;
   }),
+
+  /** Verify a specific set's import completeness */
+  verify: protectedClientProcedure
+    .input(z.object({ setCode: z.string().min(2).max(10) }))
+    .query(async ({ ctx, input }) => {
+      const setCode = input.setCode.toLowerCase();
+
+      // Get Scryfall set info for reference count
+      let scryfallTotal = 0;
+      let setName = setCode.toUpperCase();
+      try {
+        const scryfallSet = await getScryfallClient().getSet(setCode);
+        scryfallTotal = scryfallSet.card_count;
+        setName = scryfallSet.name;
+      } catch {
+        // If Scryfall unavailable, use our stored total
+      }
+
+      // Get our audit record
+      const audit = await ctx.prisma.setAudit.findUnique({
+        where: {
+          installationId_setCode: {
+            installationId: ctx.installationId,
+            setCode,
+          },
+        },
+      });
+
+      // Count imported products by status
+      const [successCount, duplicateCount, failedCount] = await Promise.all([
+        ctx.prisma.importedProduct.count({
+          where: { setCode, success: true, saleorProductId: { not: "existing" } },
+        }),
+        ctx.prisma.importedProduct.count({
+          where: { setCode, success: true, saleorProductId: "existing" },
+        }),
+        ctx.prisma.importedProduct.count({
+          where: { setCode, success: false },
+        }),
+      ]);
+
+      const totalImported = successCount + duplicateCount;
+      const totalFromScryfall = scryfallTotal || audit?.totalCards || 0;
+      const completeness = totalFromScryfall > 0
+        ? Math.round((totalImported / totalFromScryfall) * 100)
+        : 0;
+
+      return {
+        setCode,
+        setName,
+        scryfallTotal: totalFromScryfall,
+        imported: totalImported,
+        newlyCreated: successCount,
+        alreadyExisted: duplicateCount,
+        failed: failedCount,
+        completeness,
+        lastImportedAt: audit?.lastImportedAt ?? null,
+      };
+    }),
 });
 
 // --- Background job processing ---

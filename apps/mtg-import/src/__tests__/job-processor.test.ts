@@ -127,7 +127,7 @@ function makeBulkCreateResultWithErrors(successCount: number, errorCount: number
   for (let i = 0; i < errorCount; i++) {
     results.push({
       product: null,
-      errors: [{ field: "slug", message: "Slug already exists", code: "UNIQUE", path: null }],
+      errors: [{ message: "Slug already exists", code: "UNIQUE", path: null }],
     });
   }
   return { count: successCount, results, errors: [] };

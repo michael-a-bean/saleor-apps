@@ -105,14 +105,12 @@ export const PRODUCT_BULK_CREATE_MUTATION = gql`
           }
         }
         errors {
-          field
           message
           code
           path
         }
       }
       errors {
-        field
         message
         code
         path
@@ -171,14 +169,12 @@ export interface ProductBulkCreateResult {
       }>;
     } | null;
     errors: Array<{
-      field: string | null;
       message: string | null;
       code: string;
       path: string | null;
     }>;
   }>;
   errors: Array<{
-    field: string | null;
     message: string | null;
     code: string;
     path: string | null;

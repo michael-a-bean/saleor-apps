@@ -19,6 +19,7 @@ import { createLogger } from "@/lib/logger";
 import { env } from "@/lib/env";
 import { ScryfallClient, BulkDataManager } from "../scryfall";
 import { JobProcessor } from "../import/job-processor";
+import { MtgjsonBulkDataManager } from "../mtgjson";
 import { protectedClientProcedure } from "./protected-client-procedure";
 import { router } from "./trpc-server";
 
@@ -312,10 +313,12 @@ async function startJobProcessing(
 
     const client = getScryfallClient();
     const bulkData = new BulkDataManager({ client });
+    const mtgjsonBulk = new MtgjsonBulkDataManager();
 
     const processor = new JobProcessor({
       scryfallClient: client,
       bulkDataManager: bulkData,
+      mtgjsonBulkManager: mtgjsonBulk,
       prisma,
       gqlClient,
     });

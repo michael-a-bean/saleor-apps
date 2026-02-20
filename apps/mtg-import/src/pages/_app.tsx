@@ -1,4 +1,5 @@
 import "@saleor/macaw-ui/style";
+import "@/ui/styles/globals.css";
 
 import { AppBridge, AppBridgeProvider } from "@saleor/app-sdk/app-bridge";
 import { RoutePropagator } from "@saleor/app-sdk/app-bridge/next";
@@ -11,7 +12,7 @@ import { Box, ThemeProvider } from "@saleor/macaw-ui";
 import { AppProps } from "next/app";
 
 import { trpcClient } from "@/modules/trpc/trpc-client";
-import { AppLayout } from "@/ui/components/app-layout";
+import { AppLayout } from "@/ui/components";
 
 /**
  * Polyfill for crypto.randomUUID() in non-secure contexts (HTTP).

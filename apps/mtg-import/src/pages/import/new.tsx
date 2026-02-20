@@ -1,22 +1,24 @@
+import { useDashboardNotification } from "@saleor/apps-shared/use-dashboard-notification";
+import { Breadcrumbs } from "@saleor/apps-ui";
 import { Layout } from "@saleor/apps-ui";
 import { Box, Button, Input, Select, Text } from "@saleor/macaw-ui";
 import { NextPage } from "next";
+import Link from "next/link";
 import { useRouter } from "next/router";
 import { useState, useMemo } from "react";
 
 import { trpcClient } from "@/modules/trpc/trpc-client";
+import { ConfirmModal } from "@/ui/components";
 
 const NewImportPage: NextPage = () => {
   const router = useRouter();
+  const { notifySuccess, notifyError } = useDashboardNotification();
   const [importType, setImportType] = useState<"SET" | "BULK" | "BACKFILL">("SET");
   const [setCode, setSetCode] = useState("");
   const [setSearch, setSetSearch] = useState("");
   const [priority, setPriority] = useState(2);
   const [showSetPicker, setShowSetPicker] = useState(false);
-  const [confirmDialog, setConfirmDialog] = useState<{
-    message: string;
-    onConfirm: () => void;
-  } | null>(null);
+  const [confirmMessage, setConfirmMessage] = useState<string | null>(null);
 
   const { data: sets } = trpcClient.sets.list.useQuery(undefined, {
     enabled: importType === "SET" || importType === "BULK",
@@ -30,8 +32,10 @@ const NewImportPage: NextPage = () => {
 
   const createMutation = trpcClient.jobs.create.useMutation({
     onSuccess: (job) => {
+      notifySuccess("Import started", `Job created for ${importType} import.`);
       router.push(`/import/${job.id}`);
     },
+    onError: (err) => notifyError("Import failed", err.message),
   });
 
   const filteredSets = useMemo(() => {
@@ -68,15 +72,13 @@ const NewImportPage: NextPage = () => {
   const handleSubmit = () => {
     if (importType === "BULK") {
       const cardCount = bulkEstimate?.totalCards ?? 100_000;
-      setConfirmDialog({
-        message: `This will import ALL ~${cardCount.toLocaleString()} cards from Scryfall (${bulkEstimate?.totalSets ?? "many"} sets). This may take several hours. Proceed?`,
-        onConfirm: () => { doSubmit(); setConfirmDialog(null); },
-      });
+      setConfirmMessage(
+        `This will import ALL ~${cardCount.toLocaleString()} cards from Scryfall (${bulkEstimate?.totalSets ?? "many"} sets). This may take several hours. Proceed?`
+      );
     } else if (importType === "SET" && selectedSet && selectedSet.card_count > 500) {
-      setConfirmDialog({
-        message: `Import ${selectedSet.name} (${selectedSet.card_count} cards)? This may take a few minutes.`,
-        onConfirm: () => { doSubmit(); setConfirmDialog(null); },
-      });
+      setConfirmMessage(
+        `Import ${selectedSet.name} (${selectedSet.card_count} cards)? This may take a few minutes.`
+      );
     } else {
       doSubmit();
     }
@@ -84,53 +86,23 @@ const NewImportPage: NextPage = () => {
 
   return (
     <Box>
-      {/* Confirmation Dialog */}
-      {confirmDialog && (
-        <Box
-          position="fixed"
-          __top="0"
-          __left="0"
-          __width="100vw"
-          __height="100vh"
-          __zIndex="100"
-          display="flex"
-          alignItems="center"
-          justifyContent="center"
-        >
-          <Box
-            __position="absolute"
-            __top="0"
-            __left="0"
-            __width="100%"
-            __height="100%"
-            __backgroundColor="rgba(0,0,0,0.4)"
-            onClick={() => setConfirmDialog(null)}
-          />
-          <Box
-            __position="relative"
-            __zIndex="101"
-            __maxWidth="480px"
-            __width="90%"
-            backgroundColor="default1"
-            borderRadius={4}
-            padding={6}
-            __boxShadow="0 8px 32px rgba(0,0,0,0.2)"
-          >
-            <Text as="h2" size={6} fontWeight="bold" marginBottom={4}>
-              Confirm Import
-            </Text>
-            <Text marginBottom={6}>{confirmDialog.message}</Text>
-            <Box display="flex" gap={3} justifyContent="flex-end">
-              <Button variant="secondary" onClick={() => setConfirmDialog(null)}>
-                Cancel
-              </Button>
-              <Button variant="primary" onClick={confirmDialog.onConfirm}>
-                Confirm
-              </Button>
-            </Box>
-          </Box>
-        </Box>
-      )}
+      <ConfirmModal
+        open={!!confirmMessage}
+        title="Confirm Import"
+        message={confirmMessage ?? ""}
+        confirmLabel="Start Import"
+        onConfirm={doSubmit}
+        onClose={() => setConfirmMessage(null)}
+      />
+
+      <Box marginBottom={4}>
+        <Breadcrumbs>
+          <Breadcrumbs.Item>
+            <Link href="/import">Import Jobs</Link>
+          </Breadcrumbs.Item>
+          <Breadcrumbs.Item>New Import</Breadcrumbs.Item>
+        </Breadcrumbs>
+      </Box>
 
       <Box marginBottom={6}>
         <Text as="h1" size={10} fontWeight="bold">
@@ -199,7 +171,7 @@ const NewImportPage: NextPage = () => {
                     backgroundColor="default1"
                     borderRadius={2}
                   >
-                    <Box>
+                    <Box __flex="1">
                       <Text fontWeight="bold">
                         {selectedSet.code.toUpperCase()} — {selectedSet.name}
                       </Text>
@@ -251,7 +223,7 @@ const NewImportPage: NextPage = () => {
                             paddingX={3}
                             cursor="pointer"
                             onClick={() => handleSelectSet(set.code)}
-                            __transition="background-color 0.1s"
+                            className="data-table-row"
                           >
                             <Text fontWeight="bold" size={2}>
                               {set.code.toUpperCase()}

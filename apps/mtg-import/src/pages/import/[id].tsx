@@ -1,15 +1,26 @@
+import { useDashboardNotification } from "@saleor/apps-shared/use-dashboard-notification";
+import { Breadcrumbs } from "@saleor/apps-ui";
 import { Layout } from "@saleor/apps-ui";
 import { Box, Button, Text } from "@saleor/macaw-ui";
 import { NextPage } from "next";
+import Link from "next/link";
 import { useRouter } from "next/router";
 
 import { trpcClient } from "@/modules/trpc/trpc-client";
 import type { ImportJobWithProducts } from "@/types/import-types";
+import {
+  DataTable,
+  InlineSpinner,
+  ProgressBar,
+  StatBox,
+  StatusBadge,
+} from "@/ui/components";
 
 const JobDetailPage: NextPage = () => {
   const router = useRouter();
   const jobId = router.query.id as string;
   const utils = trpcClient.useUtils();
+  const { notifySuccess, notifyError } = useDashboardNotification();
 
   const { data: job, isLoading, error } = trpcClient.jobs.get.useQuery(
     { id: jobId },
@@ -17,11 +28,19 @@ const JobDetailPage: NextPage = () => {
   );
 
   const cancelMutation = trpcClient.jobs.cancel.useMutation({
-    onSuccess: () => utils.jobs.get.invalidate({ id: jobId }),
+    onSuccess: () => {
+      utils.jobs.get.invalidate({ id: jobId });
+      notifySuccess("Job cancelled", "The import job has been cancelled.");
+    },
+    onError: (err) => notifyError("Cancel failed", err.message),
   });
 
   const retryMutation = trpcClient.jobs.retry.useMutation({
-    onSuccess: (newJob) => router.push(`/import/${newJob.id}`),
+    onSuccess: (newJob) => {
+      notifySuccess("Retry created", "A new retry job has been created.");
+      router.push(`/import/${newJob.id}`);
+    },
+    onError: (err) => notifyError("Retry failed", err.message),
   });
 
   if (error) {
@@ -29,10 +48,9 @@ const JobDetailPage: NextPage = () => {
   }
 
   if (isLoading || !job) {
-    return <Text>Loading...</Text>;
+    return <InlineSpinner label="Loading job details..." />;
   }
 
-  // Cast needed: generated Prisma client is from older schema; field names differ at type level
   const j = job as unknown as ImportJobWithProducts;
 
   const progressPercent = j.cardsTotal > 0
@@ -63,21 +81,21 @@ const JobDetailPage: NextPage = () => {
 
   return (
     <Box>
+      <Box marginBottom={4}>
+        <Breadcrumbs>
+          <Breadcrumbs.Item>
+            <Link href="/import">Import Jobs</Link>
+          </Breadcrumbs.Item>
+          <Breadcrumbs.Item>
+            {j.type} {j.setCode ? `(${j.setCode.toUpperCase()})` : ""}
+          </Breadcrumbs.Item>
+        </Breadcrumbs>
+      </Box>
+
       <Box display="flex" justifyContent="space-between" alignItems="center" marginBottom={6}>
-        <Box>
-          <Text
-            as="span"
-            size={2}
-            color="default2"
-            cursor="pointer"
-            onClick={() => router.push("/import")}
-          >
-            Import Jobs &gt;{" "}
-          </Text>
-          <Text as="h1" size={10} fontWeight="bold">
-            {j.type} Import {j.setCode ? `(${j.setCode.toUpperCase()})` : ""}
-          </Text>
-        </Box>
+        <Text as="h1" size={10} fontWeight="bold">
+          {j.type} Import {j.setCode ? `(${j.setCode.toUpperCase()})` : ""}
+        </Text>
         <Box display="flex" gap={2}>
           {(j.status === "RUNNING" || j.status === "PENDING") && (
             <Button
@@ -98,40 +116,29 @@ const JobDetailPage: NextPage = () => {
       {/* Stats */}
       <Layout.AppSection heading="Job Status">
         <Layout.AppSectionCard>
-          <Box display="flex" gap={6} padding={4} flexWrap="wrap">
-            <StatBox label="Status" value={j.status} />
+          <Box display="flex" gap={6} padding={4} flexWrap="wrap" alignItems="center">
+            <Box>
+              <Text size={1} color="default2">Status</Text>
+              <Box marginTop={1}>
+                <StatusBadge status={j.status} />
+              </Box>
+            </Box>
             <StatBox label="Priority" value={String(j.priority)} />
             <StatBox label="Cards Processed" value={String(j.cardsProcessed)} />
-            <StatBox label="Cards Total" value={String(j.cardsTotal || "—")} />
+            <StatBox label="Cards Total" value={String(j.cardsTotal || "\u2014")} />
             <StatBox label="Variants Created" value={String(j.variantsCreated)} />
-            <StatBox label="Already Existed" value={j.skipped > 0 ? String(j.skipped) : "—"} />
+            <StatBox label="Already Existed" value={j.skipped > 0 ? String(j.skipped) : "\u2014"} />
             <StatBox label="Errors" value={String(j.errors)} />
           </Box>
 
           {/* Progress Bar */}
           {j.status === "RUNNING" && j.cardsTotal > 0 && (
             <Box padding={4} paddingTop={0}>
-              <Box display="flex" justifyContent="space-between" marginBottom={1}>
-                <Text size={1}>Progress</Text>
-                <Box display="flex" gap={3}>
-                  {etaText && <Text size={1} color="default2">{etaText}</Text>}
-                  <Text size={1}>{progressPercent}%</Text>
-                </Box>
-              </Box>
-              <Box
-                __width="100%"
-                __height="8px"
-                backgroundColor="default2"
-                borderRadius={2}
-                overflow="hidden"
-              >
-                <Box
-                  __width={`${progressPercent}%`}
-                  __height="100%"
-                  backgroundColor="info1"
-                  __transition="width 0.3s ease"
-                />
-              </Box>
+              <ProgressBar
+                percent={progressPercent}
+                showLabel
+                sublabel={etaText ?? undefined}
+              />
             </Box>
           )}
 
@@ -181,50 +188,41 @@ const JobDetailPage: NextPage = () => {
         <Box marginTop={6}>
           <Layout.AppSection heading={`Recent Imports (${j._count?.importedProducts ?? 0} total)`}>
             <Layout.AppSectionCard>
-              <Box as="table" width="100%">
-                <Box as="thead">
-                  <Box as="tr">
-                    <Box as="th" padding={2} textAlign="left">
-                      <Text fontWeight="bold">Card</Text>
-                    </Box>
-                    <Box as="th" padding={2} textAlign="left">
-                      <Text fontWeight="bold">Set</Text>
-                    </Box>
-                    <Box as="th" padding={2} textAlign="left">
-                      <Text fontWeight="bold">Rarity</Text>
-                    </Box>
-                    <Box as="th" padding={2} textAlign="right">
-                      <Text fontWeight="bold">Variants</Text>
-                    </Box>
-                    <Box as="th" padding={2} textAlign="left">
-                      <Text fontWeight="bold">Status</Text>
-                    </Box>
-                  </Box>
-                </Box>
-                <Box as="tbody">
-                  {j.importedProducts.map((p) => (
-                    <Box as="tr" key={p.id}>
-                      <Box as="td" padding={2}>
-                        <Text>{p.cardName}</Text>
-                      </Box>
-                      <Box as="td" padding={2}>
-                        <Text>{p.setCode.toUpperCase()} #{p.collectorNumber}</Text>
-                      </Box>
-                      <Box as="td" padding={2}>
-                        <Text>{p.rarity}</Text>
-                      </Box>
-                      <Box as="td" padding={2} textAlign="right">
-                        <Text>{p.variantCount}</Text>
-                      </Box>
-                      <Box as="td" padding={2}>
-                        <Text color={p.success ? "success1" : "critical1"}>
-                          {p.success ? "OK" : p.errorMessage ?? "Failed"}
-                        </Text>
-                      </Box>
-                    </Box>
-                  ))}
-                </Box>
-              </Box>
+              <DataTable
+                columns={[
+                  {
+                    header: "Card",
+                    render: (p) => <Text>{p.cardName}</Text>,
+                  },
+                  {
+                    header: "Set",
+                    render: (p) => (
+                      <Text>
+                        {p.setCode.toUpperCase()} #{p.collectorNumber}
+                      </Text>
+                    ),
+                  },
+                  {
+                    header: "Rarity",
+                    render: (p) => <Text>{p.rarity}</Text>,
+                  },
+                  {
+                    header: "Variants",
+                    align: "right",
+                    render: (p) => <Text>{p.variantCount}</Text>,
+                  },
+                  {
+                    header: "Status",
+                    render: (p) => (
+                      <Text color={p.success ? "success1" : "critical1"}>
+                        {p.success ? "OK" : p.errorMessage ?? "Failed"}
+                      </Text>
+                    ),
+                  },
+                ]}
+                data={j.importedProducts}
+                rowKey={(p) => p.id}
+              />
             </Layout.AppSectionCard>
           </Layout.AppSection>
         </Box>
@@ -232,15 +230,6 @@ const JobDetailPage: NextPage = () => {
     </Box>
   );
 };
-
-function StatBox({ label, value }: { label: string; value: string }) {
-  return (
-    <Box>
-      <Text size={1} color="default2">{label}</Text>
-      <Text size={4} fontWeight="bold">{value}</Text>
-    </Box>
-  );
-}
 
 function formatDate(date: Date | string): string {
   return new Date(date).toLocaleString();

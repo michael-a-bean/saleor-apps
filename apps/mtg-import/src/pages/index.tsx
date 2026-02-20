@@ -1,11 +1,13 @@
 import { useAppBridge } from "@saleor/app-sdk/app-bridge";
+import { useDashboardNotification } from "@saleor/apps-shared/use-dashboard-notification";
 import { Layout } from "@saleor/apps-ui";
-import { Box, Button, Text } from "@saleor/macaw-ui";
+import { Box, Button, Text, Tooltip } from "@saleor/macaw-ui";
 import { NextPage } from "next";
 import { useRouter } from "next/router";
 
 import { trpcClient } from "@/modules/trpc/trpc-client";
 import type { ImportJob } from "@/types/import-types";
+import { DataTable, InlineSpinner, ProgressBar, StatBox, StatusBadge } from "@/ui/components";
 
 const STATUS_ICON: Record<string, string> = {
   pass: "✓",
@@ -50,11 +52,7 @@ const IndexPage: NextPage = () => {
         }
       >
         <Layout.AppSectionCard>
-          {readiness.isLoading && (
-            <Box padding={4}>
-              <Text>Checking system readiness...</Text>
-            </Box>
-          )}
+          {readiness.isLoading && <InlineSpinner label="Checking system readiness..." />}
           {readiness.error && (
             <Box padding={4}>
               <Text color="critical1">Error: {readiness.error.message}</Text>
@@ -128,11 +126,7 @@ const IndexPage: NextPage = () => {
           }
         >
           <Layout.AppSectionCard>
-            {catalog.isLoading && (
-              <Box padding={4}>
-                <Text>Loading catalog data...</Text>
-              </Box>
-            )}
+            {catalog.isLoading && <InlineSpinner label="Loading catalog data..." />}
             {catalog.error && (
               <Box padding={4}>
                 <Text color="critical1">Error: {catalog.error.message}</Text>
@@ -162,26 +156,11 @@ const IndexPage: NextPage = () => {
                 {/* Completeness Bar */}
                 {catalog.data.totalExpected > 0 && (
                   <Box marginBottom={4}>
-                    <Box display="flex" justifyContent="space-between" marginBottom={1}>
-                      <Text size={1}>Overall Completeness</Text>
-                      <Text size={1}>{catalog.data.completenessPercent}%</Text>
-                    </Box>
-                    <Box
-                      __width="100%"
-                      __height="8px"
-                      backgroundColor="default2"
-                      borderRadius={2}
-                      overflow="hidden"
-                    >
-                      <Box
-                        __width={`${Math.min(catalog.data.completenessPercent, 100)}%`}
-                        __height="100%"
-                        backgroundColor={
-                          catalog.data.completenessPercent >= 100 ? "success1" : "info1"
-                        }
-                        __transition="width 0.3s ease"
-                      />
-                    </Box>
+                    <ProgressBar
+                      percent={catalog.data.completenessPercent}
+                      showLabel
+                      label="Overall Completeness"
+                    />
                   </Box>
                 )}
 
@@ -191,70 +170,44 @@ const IndexPage: NextPage = () => {
                     <Text as="p" fontWeight="bold" marginBottom={2}>
                       Recent Jobs
                     </Text>
-                    <Box as="table" width="100%">
-                      <Box as="thead">
-                        <Box as="tr">
-                          <Box as="th" padding={1} textAlign="left">
-                            <Text size={1} fontWeight="bold">Type</Text>
-                          </Box>
-                          <Box as="th" padding={1} textAlign="left">
-                            <Text size={1} fontWeight="bold">Set</Text>
-                          </Box>
-                          <Box as="th" padding={1} textAlign="left">
-                            <Text size={1} fontWeight="bold">Status</Text>
-                          </Box>
-                          <Box as="th" padding={1} textAlign="right">
-                            <Text size={1} fontWeight="bold">Cards</Text>
-                          </Box>
-                          <Box as="th" padding={1} textAlign="left">
-                            <Text size={1} fontWeight="bold">Created</Text>
-                          </Box>
-                        </Box>
-                      </Box>
-                      <Box as="tbody">
-                        {(catalog.data.recentJobs as unknown as ImportJob[]).map((job) => (
-                          <Box
-                            as="tr"
-                            key={job.id}
-                            cursor="pointer"
-                            onClick={() => router.push(`/import/${job.id}`)}
-                          >
-                            <Box as="td" padding={1}>
-                              <Text size={1}>{job.type}</Text>
-                            </Box>
-                            <Box as="td" padding={1}>
-                              <Text size={1}>{job.setCode?.toUpperCase() ?? "ALL"}</Text>
-                            </Box>
-                            <Box as="td" padding={1}>
-                              <Text
-                                size={1}
-                                color={
-                                  job.status === "COMPLETED"
-                                    ? "success1"
-                                    : job.status === "FAILED"
-                                    ? "critical1"
-                                    : job.status === "RUNNING"
-                                    ? "info1"
-                                    : undefined
-                                }
-                              >
-                                {job.status}
-                              </Text>
-                            </Box>
-                            <Box as="td" padding={1} textAlign="right">
-                              <Text size={1}>
-                                {job.cardsProcessed}/{job.cardsTotal || "?"}
-                              </Text>
-                            </Box>
-                            <Box as="td" padding={1}>
-                              <Text size={1}>
-                                {new Date(job.createdAt).toLocaleDateString()}
-                              </Text>
-                            </Box>
-                          </Box>
-                        ))}
-                      </Box>
-                    </Box>
+                    <DataTable
+                      columns={[
+                        {
+                          header: "Type",
+                          render: (job: ImportJob) => <Text size={1}>{job.type}</Text>,
+                        },
+                        {
+                          header: "Set",
+                          render: (job: ImportJob) => (
+                            <Text size={1}>{job.setCode?.toUpperCase() ?? "ALL"}</Text>
+                          ),
+                        },
+                        {
+                          header: "Status",
+                          render: (job: ImportJob) => <StatusBadge status={job.status} />,
+                        },
+                        {
+                          header: "Cards",
+                          align: "right",
+                          render: (job: ImportJob) => (
+                            <Text size={1}>
+                              {job.cardsProcessed}/{job.cardsTotal || "?"}
+                            </Text>
+                          ),
+                        },
+                        {
+                          header: "Created",
+                          render: (job: ImportJob) => (
+                            <Text size={1}>
+                              {new Date(job.createdAt).toLocaleDateString()}
+                            </Text>
+                          ),
+                        },
+                      ]}
+                      data={catalog.data.recentJobs as unknown as ImportJob[]}
+                      rowKey={(job) => job.id}
+                      onRowClick={(job) => router.push(`/import/${job.id}`)}
+                    />
                   </Box>
                 )}
 
@@ -278,15 +231,5 @@ const IndexPage: NextPage = () => {
     </Box>
   );
 };
-
-function StatBox({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (
-    <Box>
-      <Text size={1} color="default2">{label}</Text>
-      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-      <Text size={4} fontWeight="bold" color={color as any}>{value}</Text>
-    </Box>
-  );
-}
 
 export default IndexPage;

@@ -1,3 +1,4 @@
+import { useDashboardNotification } from "@saleor/apps-shared/use-dashboard-notification";
 import { Layout } from "@saleor/apps-ui";
 import { Box, Button, Input, Select, Text } from "@saleor/macaw-ui";
 import { NextPage } from "next";
@@ -6,6 +7,14 @@ import { useState, useMemo } from "react";
 
 import { trpcClient } from "@/modules/trpc/trpc-client";
 import type { SetAudit } from "@/types/import-types";
+import {
+  ConfirmModal,
+  DataTable,
+  InlineSpinner,
+  ProgressBar,
+  StatBox,
+  TableSkeleton,
+} from "@/ui/components";
 
 const SET_TYPE_OPTIONS = [
   { value: "all", label: "All Types" },
@@ -22,6 +31,7 @@ const DISPLAY_LIMIT = 50;
 
 const SetsPage: NextPage = () => {
   const router = useRouter();
+  const { notifySuccess, notifyError } = useDashboardNotification();
   const { data: sets, isLoading } = trpcClient.sets.list.useQuery();
   const { data: importStatus } = trpcClient.sets.importStatus.useQuery();
   const [verifyingSet, setVerifyingSet] = useState<string | null>(null);
@@ -35,19 +45,24 @@ const SetsPage: NextPage = () => {
     onConfirm: () => void;
   } | null>(null);
 
-  // Cast needed: generated Prisma client is from older schema; field names differ at type level
   const importedSets = new Map(
     ((importStatus ?? []) as unknown as SetAudit[]).map((audit) => [audit.setCode, audit])
   );
 
   const createMutation = trpcClient.jobs.create.useMutation({
-    onSuccess: (job) => router.push(`/import/${job.id}`),
+    onSuccess: (job) => {
+      notifySuccess("Import started", `Job created for set import.`);
+      router.push(`/import/${job.id}`);
+    },
+    onError: (err) => notifyError("Import failed", err.message),
   });
 
   const batchMutation = trpcClient.jobs.createBatch.useMutation({
     onSuccess: () => {
+      notifySuccess("Batch created", "Backfill jobs queued for all incomplete sets.");
       router.push("/import");
     },
+    onError: (err) => notifyError("Batch failed", err.message),
   });
 
   const verifyQuery = trpcClient.sets.verify.useQuery(
@@ -66,10 +81,11 @@ const SetsPage: NextPage = () => {
   );
 
   const repairMutation = trpcClient.sets.repairAttributes.useMutation({
-    onSuccess: () => {
-      // Re-trigger audit to refresh data
+    onSuccess: (data) => {
+      notifySuccess("Repair complete", `${data.repaired} repaired, ${data.failed} failed.`);
       setAuditingSet(null);
     },
+    onError: (err) => notifyError("Repair failed", err.message),
   });
 
   // Filter and search sets
@@ -77,12 +93,10 @@ const SetsPage: NextPage = () => {
     if (!sets) return [];
     let result = sets;
 
-    // Filter by set type
     if (filterType !== "all") {
       result = result.filter((s) => s.set_type === filterType);
     }
 
-    // Filter by search query
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       result = result.filter(
@@ -98,7 +112,6 @@ const SetsPage: NextPage = () => {
   const displayedSets = filteredSets.slice(0, displayLimit);
   const totalSetsCount = sets?.length ?? 0;
 
-  // Find incomplete sets for batch backfill
   const incompleteSets = useMemo(() => {
     if (!sets) return [];
     return sets.filter((s) => {
@@ -117,7 +130,6 @@ const SetsPage: NextPage = () => {
         message: `Import ${setCode.toUpperCase()} (${cardCount} cards)? This may take a few minutes.`,
         onConfirm: () => {
           createMutation.mutate({ type: "SET", setCode, priority: 2 });
-          setConfirmDialog(null);
         },
       });
     } else {
@@ -140,13 +152,24 @@ const SetsPage: NextPage = () => {
       message: `Create backfill jobs for ${setCodes.length} incomplete set(s)? This will queue imports for all missing cards.`,
       onConfirm: () => {
         batchMutation.mutate({ setCodes, priority: 2 });
-        setConfirmDialog(null);
       },
     });
   };
 
   return (
     <Box>
+      <ConfirmModal
+        open={!!confirmDialog}
+        title="Confirm Import"
+        message={confirmDialog?.message ?? ""}
+        confirmLabel="Start Import"
+        onConfirm={() => {
+          confirmDialog?.onConfirm();
+          setConfirmDialog(null);
+        }}
+        onClose={() => setConfirmDialog(null)}
+      />
+
       <Box display="flex" justifyContent="space-between" alignItems="center" marginBottom={6}>
         <Text as="h1" size={10} fontWeight="bold">
           Sets
@@ -163,54 +186,6 @@ const SetsPage: NextPage = () => {
           </Button>
         )}
       </Box>
-
-      {/* Confirmation Dialog */}
-      {confirmDialog && (
-        <Box
-          position="fixed"
-          __top="0"
-          __left="0"
-          __width="100vw"
-          __height="100vh"
-          __zIndex="100"
-          display="flex"
-          alignItems="center"
-          justifyContent="center"
-        >
-          <Box
-            __position="absolute"
-            __top="0"
-            __left="0"
-            __width="100%"
-            __height="100%"
-            __backgroundColor="rgba(0,0,0,0.4)"
-            onClick={() => setConfirmDialog(null)}
-          />
-          <Box
-            __position="relative"
-            __zIndex="101"
-            __maxWidth="480px"
-            __width="90%"
-            backgroundColor="default1"
-            borderRadius={4}
-            padding={6}
-            __boxShadow="0 8px 32px rgba(0,0,0,0.2)"
-          >
-            <Text as="h2" size={6} fontWeight="bold" marginBottom={4}>
-              Confirm Import
-            </Text>
-            <Text marginBottom={6}>{confirmDialog.message}</Text>
-            <Box display="flex" gap={3} justifyContent="flex-end">
-              <Button variant="secondary" onClick={() => setConfirmDialog(null)}>
-                Cancel
-              </Button>
-              <Button variant="primary" onClick={confirmDialog.onConfirm}>
-                Confirm
-              </Button>
-            </Box>
-          </Box>
-        </Box>
-      )}
 
       {/* Scan Results Panel */}
       {scanningSet && (
@@ -242,9 +217,7 @@ const SetsPage: NextPage = () => {
           >
             <Layout.AppSectionCard>
               {scanQuery.isLoading && (
-                <Box padding={4}>
-                  <Text>Scanning Scryfall data... this may take a moment.</Text>
-                </Box>
+                <InlineSpinner label="Scanning Scryfall data... this may take a moment." />
               )}
               {scanQuery.error && (
                 <Box padding={4}>
@@ -313,9 +286,7 @@ const SetsPage: NextPage = () => {
           >
             <Layout.AppSectionCard>
               {verifyQuery.isLoading && (
-                <Box padding={4}>
-                  <Text>Loading verification data...</Text>
-                </Box>
+                <InlineSpinner label="Loading verification data..." />
               )}
               {verifyQuery.error && (
                 <Box padding={4}>
@@ -386,20 +357,11 @@ const SetsPage: NextPage = () => {
           >
             <Layout.AppSectionCard>
               {auditQuery.isLoading && (
-                <Box padding={4}>
-                  <Text>Auditing product attributes... this may take a moment.</Text>
-                </Box>
+                <InlineSpinner label="Auditing product attributes... this may take a moment." />
               )}
               {auditQuery.error && (
                 <Box padding={4}>
                   <Text color="critical1">{auditQuery.error.message}</Text>
-                </Box>
-              )}
-              {repairMutation.data && (
-                <Box padding={4}>
-                  <Text color="success1">
-                    Repair complete: {repairMutation.data.repaired} repaired, {repairMutation.data.failed} failed
-                  </Text>
                 </Box>
               )}
               {auditQuery.data && (
@@ -429,51 +391,44 @@ const SetsPage: NextPage = () => {
                   )}
                   {auditQuery.data.attributeIssues.length > 0 && (
                     <Box padding={4} paddingTop={0}>
-                      <Text as="p" fontWeight="bold" marginBottom={2}>
-                        Products with Issues ({auditQuery.data.attributeIssues.length})
-                      </Text>
-                      <Box as="table" width="100%" __fontSize="13px">
-                        <Box as="thead">
-                          <Box as="tr">
-                            <Box as="th" padding={1} textAlign="left">
-                              <Text size={1} fontWeight="bold">Name</Text>
-                            </Box>
-                            <Box as="th" padding={1} textAlign="right">
-                              <Text size={1} fontWeight="bold">Missing</Text>
-                            </Box>
-                            <Box as="th" padding={1} textAlign="right">
-                              <Text size={1} fontWeight="bold">Stale</Text>
-                            </Box>
-                            <Box as="th" padding={1} textAlign="center">
-                              <Text size={1} fontWeight="bold">Image</Text>
-                            </Box>
-                          </Box>
-                        </Box>
-                        <Box as="tbody">
-                          {auditQuery.data.attributeIssues.slice(0, 50).map((issue) => (
-                            <Box as="tr" key={issue.saleorProductId}>
-                              <Box as="td" padding={1}>
-                                <Text size={1}>{issue.cardName}</Text>
-                              </Box>
-                              <Box as="td" padding={1} textAlign="right">
-                                <Text size={1} color={issue.missingAttributes.length > 0 ? "critical1" : undefined}>
-                                  {issue.missingAttributes.length}
-                                </Text>
-                              </Box>
-                              <Box as="td" padding={1} textAlign="right">
-                                <Text size={1} color={issue.staleAttributes.length > 0 ? "critical1" : undefined}>
-                                  {issue.staleAttributes.length}
-                                </Text>
-                              </Box>
-                              <Box as="td" padding={1} textAlign="center">
-                                <Text size={1} color={issue.imageStale ? "critical1" : "success1"}>
-                                  {issue.imageStale ? "Stale" : "OK"}
-                                </Text>
-                              </Box>
-                            </Box>
-                          ))}
-                        </Box>
-                      </Box>
+                      <DataTable
+                        columns={[
+                          {
+                            header: "Name",
+                            render: (issue) => <Text size={1}>{issue.cardName}</Text>,
+                          },
+                          {
+                            header: "Missing",
+                            align: "right",
+                            render: (issue) => (
+                              <Text size={1} color={issue.missingAttributes.length > 0 ? "critical1" : undefined}>
+                                {issue.missingAttributes.length}
+                              </Text>
+                            ),
+                          },
+                          {
+                            header: "Stale",
+                            align: "right",
+                            render: (issue) => (
+                              <Text size={1} color={issue.staleAttributes.length > 0 ? "critical1" : undefined}>
+                                {issue.staleAttributes.length}
+                              </Text>
+                            ),
+                          },
+                          {
+                            header: "Image",
+                            align: "center",
+                            render: (issue) => (
+                              <Text size={1} color={issue.imageStale ? "critical1" : "success1"}>
+                                {issue.imageStale ? "Stale" : "OK"}
+                              </Text>
+                            ),
+                          },
+                        ]}
+                        data={auditQuery.data.attributeIssues.slice(0, 50)}
+                        rowKey={(issue) => issue.saleorProductId}
+                        fontSize="13px"
+                      />
                     </Box>
                   )}
                 </>
@@ -518,11 +473,7 @@ const SetsPage: NextPage = () => {
         </Box>
 
         {isLoading ? (
-          <Layout.AppSectionCard>
-            <Box padding={6} display="flex" justifyContent="center">
-              <Text>Loading sets from Scryfall...</Text>
-            </Box>
-          </Layout.AppSectionCard>
+          <TableSkeleton rows={8} />
         ) : !sets || sets.length === 0 ? (
           <Layout.AppSectionCard>
             <Box padding={6} display="flex" justifyContent="center">
@@ -547,22 +498,22 @@ const SetsPage: NextPage = () => {
               <Box as="table" width="100%">
                 <Box as="thead">
                   <Box as="tr">
-                    <Box as="th" padding={2} textAlign="left">
+                    <Box as="th" padding={2} textAlign="left" borderBottomStyle="solid" borderBottomWidth={1} borderColor="default2">
                       <Text fontWeight="bold">Code</Text>
                     </Box>
-                    <Box as="th" padding={2} textAlign="left">
+                    <Box as="th" padding={2} textAlign="left" borderBottomStyle="solid" borderBottomWidth={1} borderColor="default2">
                       <Text fontWeight="bold">Name</Text>
                     </Box>
-                    <Box as="th" padding={2} textAlign="right">
+                    <Box as="th" padding={2} textAlign="right" borderBottomStyle="solid" borderBottomWidth={1} borderColor="default2">
                       <Text fontWeight="bold">Cards</Text>
                     </Box>
-                    <Box as="th" padding={2} textAlign="left">
+                    <Box as="th" padding={2} textAlign="left" borderBottomStyle="solid" borderBottomWidth={1} borderColor="default2">
                       <Text fontWeight="bold">Released</Text>
                     </Box>
-                    <Box as="th" padding={2} textAlign="left">
+                    <Box as="th" padding={2} textAlign="left" borderBottomStyle="solid" borderBottomWidth={1} borderColor="default2">
                       <Text fontWeight="bold">Status</Text>
                     </Box>
-                    <Box as="th" padding={2} textAlign="right">
+                    <Box as="th" padding={2} textAlign="right" borderBottomStyle="solid" borderBottomWidth={1} borderColor="default2">
                       <Text fontWeight="bold">Actions</Text>
                     </Box>
                   </Box>
@@ -575,7 +526,7 @@ const SetsPage: NextPage = () => {
                       : null;
 
                     return (
-                      <Box as="tr" key={set.id}>
+                      <Box as="tr" key={set.id} className="data-table-row">
                         <Box as="td" padding={2}>
                           <Text fontWeight="bold">{set.code.toUpperCase()}</Text>
                         </Box>
@@ -586,7 +537,7 @@ const SetsPage: NextPage = () => {
                           <Text>{set.card_count}</Text>
                         </Box>
                         <Box as="td" padding={2}>
-                          <Text size={1}>{set.released_at ?? "—"}</Text>
+                          <Text size={1}>{set.released_at ?? "\u2014"}</Text>
                         </Box>
                         <Box as="td" padding={2}>
                           {audit ? (
@@ -598,21 +549,10 @@ const SetsPage: NextPage = () => {
                                 {audit.importedCards}/{audit.totalCards} ({completeness}%)
                               </Text>
                               <Box marginTop={1}>
-                                <Box
-                                  __width="60px"
-                                  __height="4px"
-                                  backgroundColor="default2"
-                                  borderRadius={2}
-                                  overflow="hidden"
-                                >
-                                  <Box
-                                    __width={`${Math.min(completeness ?? 0, 100)}%`}
-                                    __height="100%"
-                                    backgroundColor={
-                                      completeness !== null && completeness >= 100 ? "success1" : "info1"
-                                    }
-                                  />
-                                </Box>
+                                <ProgressBar
+                                  percent={completeness ?? 0}
+                                  height="4px"
+                                />
                               </Box>
                             </Box>
                           ) : (
@@ -632,7 +572,7 @@ const SetsPage: NextPage = () => {
                               disabled={scanningSet === set.code && scanQuery.isLoading}
                             >
                               {scanningSet === set.code && scanQuery.isLoading
-                                ? "Scanning..."
+                                ? "..."
                                 : "Scan"}
                             </Button>
                             {audit && (
@@ -659,7 +599,7 @@ const SetsPage: NextPage = () => {
                                   disabled={auditingSet === set.code && auditQuery.isLoading}
                                 >
                                   {auditingSet === set.code && auditQuery.isLoading
-                                    ? "Auditing..."
+                                    ? "..."
                                     : "Audit"}
                                 </Button>
                               </>
@@ -698,16 +638,6 @@ const SetsPage: NextPage = () => {
   );
 };
 
-function StatBox({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (
-    <Box>
-      <Text size={1} color="default2">{label}</Text>
-      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-      <Text size={4} fontWeight="bold" color={color as any}>{value}</Text>
-    </Box>
-  );
-}
-
 function CardTable({
   title,
   cards,
@@ -722,40 +652,30 @@ function CardTable({
       <Text as="p" fontWeight="bold" marginBottom={2}>
         {title}
       </Text>
-      <Box as="table" width="100%" __fontSize="13px">
-        <Box as="thead">
-          <Box as="tr">
-            <Box as="th" padding={1} textAlign="left">
-              <Text size={1} fontWeight="bold">#</Text>
-            </Box>
-            <Box as="th" padding={1} textAlign="left">
-              <Text size={1} fontWeight="bold">Name</Text>
-            </Box>
-            <Box as="th" padding={1} textAlign="left">
-              <Text size={1} fontWeight="bold">{showError ? "Error" : "Rarity"}</Text>
-            </Box>
-          </Box>
-        </Box>
-        <Box as="tbody">
-          {cards.map((card) => (
-            <Box as="tr" key={card.scryfallId}>
-              <Box as="td" padding={1}>
-                <Text size={1}>{card.collectorNumber}</Text>
-              </Box>
-              <Box as="td" padding={1}>
-                <Text size={1}>{card.name}</Text>
-              </Box>
-              <Box as="td" padding={1}>
-                {showError ? (
-                  <Text size={1} color="critical1">{card.errorMessage ?? "Unknown error"}</Text>
-                ) : (
-                  <Text size={1}>{card.rarity}</Text>
-                )}
-              </Box>
-            </Box>
-          ))}
-        </Box>
-      </Box>
+      <DataTable
+        columns={[
+          {
+            header: "#",
+            render: (card) => <Text size={1}>{card.collectorNumber}</Text>,
+          },
+          {
+            header: "Name",
+            render: (card) => <Text size={1}>{card.name}</Text>,
+          },
+          {
+            header: showError ? "Error" : "Rarity",
+            render: (card) =>
+              showError ? (
+                <Text size={1} color="critical1">{card.errorMessage ?? "Unknown error"}</Text>
+              ) : (
+                <Text size={1}>{card.rarity}</Text>
+              ),
+          },
+        ]}
+        data={cards}
+        rowKey={(card) => card.scryfallId}
+        fontSize="13px"
+      />
     </Box>
   );
 }

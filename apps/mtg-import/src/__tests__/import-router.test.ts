@@ -10,6 +10,47 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
  * This tests business logic, not auth — auth is tested separately.
  */
 
+const TEST_UUID_1 = "00000000-0000-4000-8000-000000000001";
+const TEST_UUID_2 = "00000000-0000-4000-8000-000000000002";
+const TEST_UUID_3 = "00000000-0000-4000-8000-000000000003";
+
+// Mock the auth/APL layer so middleware passes through
+vi.mock("@/lib/saleor-app", () => ({
+  saleorApp: {
+    apl: {
+      get: vi.fn().mockResolvedValue({
+        token: "test-app-token",
+        saleorApiUrl: "https://api.test.saleor.cloud/graphql/",
+        appId: "app-1",
+      }),
+    },
+  },
+}));
+
+vi.mock("@saleor/app-sdk/auth", () => ({
+  verifyJWT: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("@/lib/graphql-client", () => ({
+  createInstrumentedGraphqlClient: vi.fn().mockReturnValue({}),
+}));
+
+vi.mock("@sentry/nextjs", () => ({
+  setTag: vi.fn(),
+}));
+
+// Mock the Saleor import client (pre-flight validation)
+vi.mock("@/modules/saleor", () => ({
+  SaleorImportClient: vi.fn().mockImplementation(() => ({
+    resolveImportContext: vi.fn().mockResolvedValue({
+      channelId: "ch-1",
+      productTypeId: "pt-1",
+      categoryId: "cat-1",
+      warehouseId: "wh-1",
+    }),
+  })),
+}));
+
 // Mock the Scryfall module before importing the router
 vi.mock("@/modules/scryfall", () => ({
   ScryfallClient: vi.fn().mockImplementation(() => ({
@@ -22,6 +63,7 @@ vi.mock("@/modules/scryfall", () => ({
     getSet: vi.fn().mockResolvedValue({ card_count: 249 }),
   })),
   BulkDataManager: vi.fn(),
+  retailPaperFilter: vi.fn(),
 }));
 
 // Mock the job processor
@@ -43,8 +85,16 @@ function createMockContext(overrides: Record<string, any> = {}) {
     saleorApiUrl: "https://api.test.saleor.cloud/graphql/",
     appToken: "test-app-token",
     appId: "app-1",
+    token: "mock-jwt-token",
     apiClient: {} as any,
     prisma: {
+      appInstallation: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "inst-1",
+          saleorApiUrl: "https://api.test.saleor.cloud/graphql/",
+          appId: "app-1",
+        }),
+      },
       importJob: {
         findMany: vi.fn().mockResolvedValue([]),
         findFirst: vi.fn().mockResolvedValue(null),
@@ -71,13 +121,12 @@ describe("jobsRouter", () => {
   describe("jobs.list", () => {
     it("returns paginated jobs", async () => {
       const mockJobs = [
-        { id: "j1", type: "SET", status: "COMPLETED", setCode: "m11" },
-        { id: "j2", type: "BULK", status: "RUNNING", setCode: null },
+        { id: TEST_UUID_1, type: "SET", status: "COMPLETED", setCode: "m11" },
+        { id: TEST_UUID_2, type: "BULK", status: "RUNNING", setCode: null },
       ];
       const ctx = createMockContext();
       ctx.prisma.importJob.findMany.mockResolvedValue(mockJobs);
 
-      // Call the procedure directly (simplified — in real tests use createCallerFactory)
       const result = await jobsRouter.createCaller(ctx as any).list({ limit: 20 });
 
       expect(result.jobs).toHaveLength(2);
@@ -106,7 +155,7 @@ describe("jobsRouter", () => {
   describe("jobs.get", () => {
     it("returns job with imported products", async () => {
       const mockJob = {
-        id: "j1",
+        id: TEST_UUID_1,
         installationId: "inst-1",
         type: "SET",
         status: "COMPLETED",
@@ -116,9 +165,9 @@ describe("jobsRouter", () => {
       const ctx = createMockContext();
       ctx.prisma.importJob.findFirst.mockResolvedValue(mockJob);
 
-      const result = await jobsRouter.createCaller(ctx as any).get({ id: "j1" });
+      const result = await jobsRouter.createCaller(ctx as any).get({ id: TEST_UUID_1 });
 
-      expect(result.id).toBe("j1");
+      expect(result.id).toBe(TEST_UUID_1);
       expect(result.importedProducts).toHaveLength(1);
     });
 
@@ -127,8 +176,8 @@ describe("jobsRouter", () => {
       ctx.prisma.importJob.findFirst.mockResolvedValue(null);
 
       await expect(
-        jobsRouter.createCaller(ctx as any).get({ id: "nonexistent" })
-      ).rejects.toThrow("NOT_FOUND");
+        jobsRouter.createCaller(ctx as any).get({ id: TEST_UUID_1 })
+      ).rejects.toThrow("Import job not found");
     });
   });
 
@@ -145,7 +194,7 @@ describe("jobsRouter", () => {
       const ctx = createMockContext();
       ctx.prisma.importJob.findFirst.mockResolvedValue(null); // No duplicates
 
-      const result = await jobsRouter.createCaller(ctx as any).create({
+      await jobsRouter.createCaller(ctx as any).create({
         type: "SET",
         setCode: "M11",
         priority: 2,
@@ -174,10 +223,9 @@ describe("jobsRouter", () => {
 
     it("allows creating job when no duplicates", async () => {
       const ctx = createMockContext();
-      // First findFirst (duplicate check) returns null
       ctx.prisma.importJob.findFirst.mockResolvedValue(null);
 
-      const result = await jobsRouter.createCaller(ctx as any).create({
+      await jobsRouter.createCaller(ctx as any).create({
         type: "BULK",
         priority: 1,
       });
@@ -190,12 +238,12 @@ describe("jobsRouter", () => {
     it("cancels a running job", async () => {
       const ctx = createMockContext();
       ctx.prisma.importJob.findFirst.mockResolvedValue({
-        id: "j1",
+        id: TEST_UUID_1,
         installationId: "inst-1",
         status: "RUNNING",
       });
 
-      const result = await jobsRouter.createCaller(ctx as any).cancel({ id: "j1" });
+      const result = await jobsRouter.createCaller(ctx as any).cancel({ id: TEST_UUID_1 });
 
       expect(result.success).toBe(true);
       expect(ctx.prisma.importJob.update).toHaveBeenCalledWith(
@@ -208,13 +256,13 @@ describe("jobsRouter", () => {
     it("rejects cancelling a completed job", async () => {
       const ctx = createMockContext();
       ctx.prisma.importJob.findFirst.mockResolvedValue({
-        id: "j1",
+        id: TEST_UUID_1,
         installationId: "inst-1",
         status: "COMPLETED",
       });
 
       await expect(
-        jobsRouter.createCaller(ctx as any).cancel({ id: "j1" })
+        jobsRouter.createCaller(ctx as any).cancel({ id: TEST_UUID_1 })
       ).rejects.toThrow("Cannot cancel");
     });
 
@@ -223,8 +271,8 @@ describe("jobsRouter", () => {
       ctx.prisma.importJob.findFirst.mockResolvedValue(null);
 
       await expect(
-        jobsRouter.createCaller(ctx as any).cancel({ id: "j1" })
-      ).rejects.toThrow("NOT_FOUND");
+        jobsRouter.createCaller(ctx as any).cancel({ id: TEST_UUID_1 })
+      ).rejects.toThrow("Import job not found");
     });
   });
 
@@ -232,7 +280,7 @@ describe("jobsRouter", () => {
     it("creates new job from failed job with checkpoint", async () => {
       const ctx = createMockContext();
       ctx.prisma.importJob.findFirst.mockResolvedValue({
-        id: "orig-1",
+        id: TEST_UUID_1,
         installationId: "inst-1",
         type: "SET",
         status: "FAILED",
@@ -242,7 +290,7 @@ describe("jobsRouter", () => {
         lastCheckpoint: "150",
       });
 
-      const result = await jobsRouter.createCaller(ctx as any).retry({ id: "orig-1" });
+      await jobsRouter.createCaller(ctx as any).retry({ id: TEST_UUID_1 });
 
       expect(ctx.prisma.importJob.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -259,13 +307,13 @@ describe("jobsRouter", () => {
     it("rejects retrying a running job", async () => {
       const ctx = createMockContext();
       ctx.prisma.importJob.findFirst.mockResolvedValue({
-        id: "j1",
+        id: TEST_UUID_1,
         installationId: "inst-1",
         status: "RUNNING",
       });
 
       await expect(
-        jobsRouter.createCaller(ctx as any).retry({ id: "j1" })
+        jobsRouter.createCaller(ctx as any).retry({ id: TEST_UUID_1 })
       ).rejects.toThrow("Can only retry");
     });
   });

@@ -33,6 +33,7 @@ export const AppLayout = ({ children }: AppLayoutProps) => {
   const currentPath = router.pathname;
 
   const navItems = [
+    { href: "/", label: "Dashboard" },
     { href: "/import", label: "Import Jobs" },
     { href: "/sets", label: "Sets" },
   ];
@@ -57,7 +58,7 @@ export const AppLayout = ({ children }: AppLayoutProps) => {
             key={item.href}
             href={item.href}
             label={item.label}
-            isActive={currentPath.startsWith(item.href)}
+            isActive={item.href === "/" ? currentPath === "/" : currentPath.startsWith(item.href)}
           />
         ))}
       </Box>

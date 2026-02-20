@@ -4,6 +4,7 @@ import { NextPage } from "next";
 import { useRouter } from "next/router";
 
 import { trpcClient } from "@/modules/trpc/trpc-client";
+import type { ImportJob } from "@/types/import-types";
 
 const statusColors = {
   PENDING: "default2",
@@ -38,7 +39,8 @@ const ImportJobsPage: NextPage = () => {
     );
   }
 
-  const jobs = data?.jobs ?? [];
+  // Cast needed: generated Prisma client is from older schema; field names differ at type level
+  const jobs = (data?.jobs ?? []) as unknown as ImportJob[];
 
   return (
     <Box>

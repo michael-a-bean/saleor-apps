@@ -84,6 +84,40 @@ export const PRODUCT_BY_SLUG_QUERY = gql`
   }
 `;
 
+export const PRODUCTS_BY_METADATA_QUERY = gql`
+  query ProductsByMetadata($filter: ProductFilterInput!, $channel: String!, $first: Int!) {
+    products(first: $first, filter: $filter, channel: $channel) {
+      edges {
+        node {
+          id
+          name
+          slug
+          attributes {
+            attribute {
+              id
+              slug
+            }
+            values {
+              name
+              plainText
+              boolean
+              slug
+            }
+          }
+          media {
+            url
+            alt
+          }
+          metadata {
+            key
+            value
+          }
+        }
+      }
+    }
+  }
+`;
+
 // --- Mutations ---
 
 export const PRODUCT_BULK_CREATE_MUTATION = gql`
@@ -114,6 +148,26 @@ export const PRODUCT_BULK_CREATE_MUTATION = gql`
         message
         code
         path
+      }
+    }
+  }
+`;
+
+export const PRODUCT_BULK_UPDATE_MUTATION = gql`
+  mutation ProductBulkUpdate($products: [ProductBulkUpdateInput!]!) {
+    productBulkUpdate(products: $products, errorPolicy: REJECT_FAILED_ROWS) {
+      count
+      results {
+        product {
+          id
+          name
+          slug
+        }
+        errors {
+          message
+          code
+          path
+        }
       }
     }
   }
@@ -179,4 +233,37 @@ export interface ProductBulkCreateResult {
     code: string;
     path: string | null;
   }>;
+}
+
+export interface ProductBulkUpdateResult {
+  count: number;
+  results: Array<{
+    product: {
+      id: string;
+      name: string;
+      slug: string;
+    } | null;
+    errors: Array<{
+      message: string | null;
+      code: string;
+      path: string | null;
+    }>;
+  }>;
+}
+
+export interface SaleorProductWithAttributes {
+  id: string;
+  name: string;
+  slug: string;
+  attributes: Array<{
+    attribute: { id: string; slug: string };
+    values: Array<{
+      name: string | null;
+      plainText: string | null;
+      boolean: boolean | null;
+      slug: string | null;
+    }>;
+  }>;
+  media: Array<{ url: string; alt: string | null }>;
+  metadata: Array<{ key: string; value: string }>;
 }

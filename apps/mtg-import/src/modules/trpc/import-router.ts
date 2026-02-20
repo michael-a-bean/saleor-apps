@@ -13,12 +13,14 @@
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import type { ImportJobStatus, ImportJobType } from "@prisma/client";
+import type { ImportJobStatus, ImportJobType } from "@/generated/prisma";
 
 import { createLogger } from "@/lib/logger";
 import { env } from "@/lib/env";
 import { ScryfallClient, BulkDataManager, retailPaperFilter } from "../scryfall";
 import { JobProcessor } from "../import/job-processor";
+import { ATTRIBUTE_DEFS } from "../import/attribute-map";
+import { SaleorImportClient } from "../saleor";
 import { MtgjsonBulkDataManager } from "../mtgjson";
 import { protectedClientProcedure } from "./protected-client-procedure";
 import { router } from "./trpc-server";
@@ -139,14 +141,28 @@ const jobsRouter = router({
         });
       }
 
-      // Get card count for SET/BACKFILL imports
+      // Pre-flight validation: ensure Saleor is configured
+      const saleor = new SaleorImportClient(ctx.apiClient!);
+      try {
+        await saleor.resolveImportContext();
+      } catch (err) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: `Saleor is not properly configured for imports: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      }
+
+      // Get card count for SET/BACKFILL imports (also validates the set code)
       let cardsTotal = 0;
       if ((input.type === "SET" || input.type === "BACKFILL") && input.setCode) {
         try {
           const set = await getScryfallClient().getSet(input.setCode.toLowerCase());
           cardsTotal = set.card_count;
         } catch {
-          // Non-fatal: we'll discover the count during processing
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Set "${input.setCode}" not found on Scryfall`,
+          });
         }
       }
 
@@ -256,6 +272,56 @@ const jobsRouter = router({
       void startJobProcessing(retryJob.id, ctx.prisma, ctx.apiClient!);
 
       return retryJob;
+    }),
+
+  /** Create batch backfill jobs for multiple sets */
+  createBatch: protectedClientProcedure
+    .input(
+      z.object({
+        setCodes: z.array(z.string().min(2).max(10)).min(1).max(50),
+        priority: z.number().min(0).max(2).default(2),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const jobs = [];
+      for (const code of input.setCodes) {
+        const setCode = code.toLowerCase();
+
+        // Skip if already running/pending
+        const existing = await ctx.prisma.importJob.findFirst({
+          where: {
+            installationId: ctx.installationId,
+            status: { in: ["PENDING", "RUNNING"] },
+            setCode,
+          },
+        });
+        if (existing) continue;
+
+        let cardsTotal = 0;
+        try {
+          const set = await getScryfallClient().getSet(setCode);
+          cardsTotal = set.card_count;
+        } catch {
+          // continue with 0
+        }
+
+        const job = await ctx.prisma.importJob.create({
+          data: {
+            installationId: ctx.installationId,
+            type: "BACKFILL" as ImportJobType,
+            status: "PENDING",
+            priority: input.priority,
+            setCode,
+            cardsTotal,
+          },
+        });
+
+        void startJobProcessing(job.id, ctx.prisma, ctx.apiClient!);
+        jobs.push(job);
+      }
+
+      logger.info("Batch jobs created", { count: jobs.length, setCodes: input.setCodes });
+      return { created: jobs.length, jobs };
     }),
 });
 
@@ -455,6 +521,278 @@ const setsRouter = router({
         failedCards,
       };
     }),
+
+  /** Audit product attributes against expected attribute definitions */
+  auditAttributes: protectedClientProcedure
+    .input(z.object({ setCode: z.string().min(2).max(10) }))
+    .query(async ({ ctx, input }) => {
+      const setCode = input.setCode.toLowerCase();
+      const saleor = new SaleorImportClient(ctx.apiClient!);
+
+      const products = await saleor.getProductsBySetCode(setCode);
+      const expectedSlugs = ATTRIBUTE_DEFS.map((d) => d.slug);
+
+      const attributeIssues: Array<{
+        saleorProductId: string;
+        cardName: string;
+        missingAttributes: string[];
+        staleAttributes: string[];
+        imageStale: boolean;
+      }> = [];
+
+      let productsMissingAttributes = 0;
+      let productsStaleAttributes = 0;
+      let productsStaleImages = 0;
+
+      for (const product of products) {
+        const existingSlugs = new Set(product.attributes.map((a) => a.attribute.slug));
+
+        const missing = expectedSlugs.filter((slug) => !existingSlugs.has(slug));
+        const stale = product.attributes
+          .filter((a) => expectedSlugs.includes(a.attribute.slug))
+          .filter((a) => a.values.length === 0 || a.values.every((v) => !v.name && !v.plainText))
+          .map((a) => a.attribute.slug);
+
+        const imageStale = product.media.length === 0;
+
+        if (missing.length > 0) productsMissingAttributes++;
+        if (stale.length > 0) productsStaleAttributes++;
+        if (imageStale) productsStaleImages++;
+
+        if (missing.length > 0 || stale.length > 0 || imageStale) {
+          attributeIssues.push({
+            saleorProductId: product.id,
+            cardName: product.name,
+            missingAttributes: missing,
+            staleAttributes: stale,
+            imageStale,
+          });
+        }
+      }
+
+      return {
+        productsAudited: products.length,
+        summary: {
+          totalIssues: attributeIssues.length,
+          productsMissingAttributes,
+          productsStaleAttributes,
+          productsStaleImages,
+        },
+        attributeIssues,
+      };
+    }),
+
+  /** Repair missing attributes by triggering a backfill job */
+  repairAttributes: protectedClientProcedure
+    .input(z.object({ setCode: z.string().min(2).max(10) }))
+    .mutation(async ({ ctx, input }) => {
+      const setCode = input.setCode.toLowerCase();
+
+      // Check for existing running/pending backfill
+      const existing = await ctx.prisma.importJob.findFirst({
+        where: {
+          installationId: ctx.installationId,
+          status: { in: ["PENDING", "RUNNING"] },
+          type: "BACKFILL",
+          setCode,
+        },
+      });
+
+      if (existing) {
+        return { repaired: 0, failed: 0, message: "A backfill job is already running for this set" };
+      }
+
+      let cardsTotal = 0;
+      try {
+        const set = await getScryfallClient().getSet(setCode);
+        cardsTotal = set.card_count;
+      } catch {
+        // continue with 0
+      }
+
+      const job = await ctx.prisma.importJob.create({
+        data: {
+          installationId: ctx.installationId,
+          type: "BACKFILL" as ImportJobType,
+          status: "PENDING",
+          priority: 1,
+          setCode,
+          cardsTotal,
+        },
+      });
+
+      void startJobProcessing(job.id, ctx.prisma, ctx.apiClient!);
+
+      logger.info("Repair job created", { setCode, jobId: job.id });
+      return { repaired: cardsTotal, failed: 0, jobId: job.id };
+    }),
+
+  /** Scan all imported sets for completeness summary */
+  scanAll: protectedClientProcedure.query(async ({ ctx }) => {
+    const audits = await ctx.prisma.setAudit.findMany({
+      where: { installationId: ctx.installationId },
+      orderBy: { lastImportedAt: "desc" },
+    });
+
+    const results = await Promise.all(
+      audits.map(async (audit) => {
+        let scryfallTotal = audit.totalCards;
+        try {
+          const set = await getScryfallClient().getSet(audit.setCode);
+          scryfallTotal = set.card_count;
+        } catch {
+          // use stored total
+        }
+
+        return {
+          setCode: audit.setCode,
+          importedCards: audit.importedCards,
+          scryfallTotal,
+          completeness: scryfallTotal > 0
+            ? Math.round((audit.importedCards / scryfallTotal) * 100)
+            : 0,
+          lastImportedAt: audit.lastImportedAt,
+        };
+      })
+    );
+
+    const incomplete = results.filter((r) => r.completeness < 100);
+    return {
+      totalSets: results.length,
+      incompleteSets: incomplete.length,
+      completeSets: results.length - incomplete.length,
+      sets: results,
+    };
+  }),
+});
+
+// --- System Router ---
+
+const systemRouter = router({
+	/** Check system readiness for imports */
+	readiness: protectedClientProcedure.query(async ({ ctx }) => {
+		const checks: Array<{
+			name: string;
+			status: "pass" | "fail" | "warn";
+			message: string;
+			detail?: string;
+		}> = [];
+
+		// Check 1: Channels
+		try {
+			const saleor = new SaleorImportClient(ctx.apiClient!);
+			const channels = await saleor.getChannels();
+			if (channels.length === 0) {
+				checks.push({
+					name: "channels",
+					status: "fail",
+					message: "No channels found",
+					detail: "Create at least one channel in Saleor Dashboard → Configuration → Channels",
+				});
+			} else {
+				checks.push({
+					name: "channels",
+					status: "pass",
+					message: `${channels.length} channel(s) found`,
+				});
+			}
+		} catch (err) {
+			checks.push({
+				name: "channels",
+				status: "fail",
+				message: "Failed to fetch channels",
+				detail: err instanceof Error ? err.message : String(err),
+			});
+		}
+
+		// Check 2: Product type "mtg-card"
+		let productType: any = null;
+		try {
+			const saleor = new SaleorImportClient(ctx.apiClient!);
+			productType = await saleor.getProductType();
+			checks.push({
+				name: "product-type",
+				status: "pass",
+				message: `Product type "${productType.slug}" found`,
+			});
+		} catch {
+			checks.push({
+				name: "product-type",
+				status: "fail",
+				message: 'Product type "mtg-card" not found',
+				detail: "Create a product type named 'mtg-card' in Saleor Dashboard → Configuration → Product Types",
+			});
+		}
+
+		// Check 3: Attributes on product type
+		if (productType) {
+			const existingSlugs = new Set(
+				productType.productAttributes.map((a: any) => a.slug),
+			);
+			const missingSlugs = ATTRIBUTE_DEFS.filter((d) => !existingSlugs.has(d.slug)).map(
+				(d) => d.slug,
+			);
+			if (missingSlugs.length === 0) {
+				checks.push({
+					name: "attributes",
+					status: "pass",
+					message: `All ${ATTRIBUTE_DEFS.length} attributes configured`,
+				});
+			} else {
+				checks.push({
+					name: "attributes",
+					status: "fail",
+					message: `${missingSlugs.length} attribute(s) missing`,
+					detail: `Missing: ${missingSlugs.join(", ")}`,
+				});
+			}
+		} else {
+			checks.push({
+				name: "attributes",
+				status: "fail",
+				message: "Cannot check attributes without product type",
+			});
+		}
+
+		// Check 4: Category "mtg-singles"
+		try {
+			const saleor = new SaleorImportClient(ctx.apiClient!);
+			const category = await saleor.getCategory();
+			checks.push({
+				name: "category",
+				status: "pass",
+				message: `Category "${category.slug}" found`,
+			});
+		} catch {
+			checks.push({
+				name: "category",
+				status: "fail",
+				message: 'Category "mtg-singles" not found',
+				detail: "Create a category named 'mtg-singles' in Saleor Dashboard → Catalog → Categories",
+			});
+		}
+
+		// Check 5: Warehouse
+		try {
+			const saleor = new SaleorImportClient(ctx.apiClient!);
+			const warehouse = await saleor.getWarehouse();
+			checks.push({
+				name: "warehouse",
+				status: "pass",
+				message: `Warehouse "${warehouse.name}" found`,
+			});
+		} catch {
+			checks.push({
+				name: "warehouse",
+				status: "fail",
+				message: "No warehouse found",
+				detail: "Create a warehouse in Saleor Dashboard → Configuration → Warehouses",
+			});
+		}
+
+		const allPass = checks.every((c) => c.status !== "fail");
+		return { ready: allPass, checks };
+	}),
 });
 
 // --- Background job processing ---
@@ -505,8 +843,49 @@ async function startJobProcessing(
   }
 }
 
+// --- Catalog Router ---
+
+const catalogRouter = router({
+  /** Get overall catalog health summary */
+  summary: protectedClientProcedure.query(async ({ ctx }) => {
+    const [audits, totalProducts, totalJobs, recentJobs] = await Promise.all([
+      ctx.prisma.setAudit.findMany({
+        where: { installationId: ctx.installationId },
+      }),
+      ctx.prisma.importedProduct.count({
+        where: { success: true },
+      }),
+      ctx.prisma.importJob.count({
+        where: { installationId: ctx.installationId },
+      }),
+      ctx.prisma.importJob.findMany({
+        where: { installationId: ctx.installationId },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+      }),
+    ]);
+
+    const totalSets = audits.length;
+    const totalCards = audits.reduce((sum, a) => sum + a.importedCards, 0);
+    const totalExpected = audits.reduce((sum, a) => sum + a.totalCards, 0);
+    const incompleteSets = audits.filter((a) => a.importedCards < a.totalCards).length;
+
+    return {
+      totalSets,
+      completeSets: totalSets - incompleteSets,
+      incompleteSets,
+      totalCards,
+      totalExpected,
+      completenessPercent: totalExpected > 0 ? Math.round((totalCards / totalExpected) * 100) : 0,
+      totalProducts,
+      totalJobs,
+      recentJobs,
+    };
+  }),
+});
+
 // Import PrismaClient and Client types
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@/generated/prisma";
 import type { Client } from "urql";
 
-export { jobsRouter, setsRouter };
+export { jobsRouter, setsRouter, systemRouter, catalogRouter };

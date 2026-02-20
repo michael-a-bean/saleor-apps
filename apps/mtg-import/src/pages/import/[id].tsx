@@ -4,6 +4,7 @@ import { NextPage } from "next";
 import { useRouter } from "next/router";
 
 import { trpcClient } from "@/modules/trpc/trpc-client";
+import type { ImportJobWithProducts } from "@/types/import-types";
 
 const JobDetailPage: NextPage = () => {
   const router = useRouter();
@@ -31,11 +32,34 @@ const JobDetailPage: NextPage = () => {
     return <Text>Loading...</Text>;
   }
 
-  const progressPercent = job.cardsTotal > 0
-    ? Math.round((job.cardsProcessed / job.cardsTotal) * 100)
+  // Cast needed: generated Prisma client is from older schema; field names differ at type level
+  const j = job as unknown as ImportJobWithProducts;
+
+  const progressPercent = j.cardsTotal > 0
+    ? Math.round((j.cardsProcessed / j.cardsTotal) * 100)
     : 0;
 
-  const errorLog: string[] = job.errorLog ? JSON.parse(job.errorLog) : [];
+  // ETA calculation
+  let etaText: string | null = null;
+  if (j.status === "RUNNING" && j.startedAt && j.cardsProcessed > 0 && j.cardsTotal > 0) {
+    const elapsedMs = Date.now() - new Date(j.startedAt).getTime();
+    const cardsPerMs = j.cardsProcessed / elapsedMs;
+    const remainingCards = j.cardsTotal - j.cardsProcessed;
+    const remainingMs = remainingCards / cardsPerMs;
+
+    if (remainingMs < 60_000) {
+      etaText = "< 1 minute remaining";
+    } else if (remainingMs < 3_600_000) {
+      const mins = Math.ceil(remainingMs / 60_000);
+      etaText = `~${mins} minute${mins > 1 ? "s" : ""} remaining`;
+    } else {
+      const hours = Math.floor(remainingMs / 3_600_000);
+      const mins = Math.ceil((remainingMs % 3_600_000) / 60_000);
+      etaText = `~${hours}h ${mins}m remaining`;
+    }
+  }
+
+  const errorLog: string[] = j.errorLog ? JSON.parse(j.errorLog) : [];
 
   return (
     <Box>
@@ -51,20 +75,20 @@ const JobDetailPage: NextPage = () => {
             Import Jobs &gt;{" "}
           </Text>
           <Text as="h1" size={10} fontWeight="bold">
-            {job.type} Import {job.setCode ? `(${job.setCode.toUpperCase()})` : ""}
+            {j.type} Import {j.setCode ? `(${j.setCode.toUpperCase()})` : ""}
           </Text>
         </Box>
         <Box display="flex" gap={2}>
-          {(job.status === "RUNNING" || job.status === "PENDING") && (
+          {(j.status === "RUNNING" || j.status === "PENDING") && (
             <Button
               variant="secondary"
-              onClick={() => cancelMutation.mutate({ id: job.id })}
+              onClick={() => cancelMutation.mutate({ id: j.id })}
             >
               Cancel
             </Button>
           )}
-          {(job.status === "FAILED" || job.status === "CANCELLED") && (
-            <Button onClick={() => retryMutation.mutate({ id: job.id })}>
+          {(j.status === "FAILED" || j.status === "CANCELLED") && (
+            <Button onClick={() => retryMutation.mutate({ id: j.id })}>
               Retry
             </Button>
           )}
@@ -75,21 +99,24 @@ const JobDetailPage: NextPage = () => {
       <Layout.AppSection heading="Job Status">
         <Layout.AppSectionCard>
           <Box display="flex" gap={6} padding={4} flexWrap="wrap">
-            <StatBox label="Status" value={job.status} />
-            <StatBox label="Priority" value={String(job.priority)} />
-            <StatBox label="Cards Processed" value={String(job.cardsProcessed)} />
-            <StatBox label="Cards Total" value={String(job.cardsTotal || "—")} />
-            <StatBox label="Variants Created" value={String(job.variantsCreated)} />
-            <StatBox label="Already Existed" value={job.skipped > 0 ? String(job.skipped) : "—"} />
-            <StatBox label="Errors" value={String(job.errors)} />
+            <StatBox label="Status" value={j.status} />
+            <StatBox label="Priority" value={String(j.priority)} />
+            <StatBox label="Cards Processed" value={String(j.cardsProcessed)} />
+            <StatBox label="Cards Total" value={String(j.cardsTotal || "—")} />
+            <StatBox label="Variants Created" value={String(j.variantsCreated)} />
+            <StatBox label="Already Existed" value={j.skipped > 0 ? String(j.skipped) : "—"} />
+            <StatBox label="Errors" value={String(j.errors)} />
           </Box>
 
           {/* Progress Bar */}
-          {job.status === "RUNNING" && job.cardsTotal > 0 && (
+          {j.status === "RUNNING" && j.cardsTotal > 0 && (
             <Box padding={4} paddingTop={0}>
               <Box display="flex" justifyContent="space-between" marginBottom={1}>
                 <Text size={1}>Progress</Text>
-                <Text size={1}>{progressPercent}%</Text>
+                <Box display="flex" gap={3}>
+                  {etaText && <Text size={1} color="default2">{etaText}</Text>}
+                  <Text size={1}>{progressPercent}%</Text>
+                </Box>
               </Box>
               <Box
                 __width="100%"
@@ -110,22 +137,22 @@ const JobDetailPage: NextPage = () => {
 
           {/* Timestamps */}
           <Box display="flex" gap={6} padding={4} paddingTop={0}>
-            <StatBox label="Created" value={formatDate(job.createdAt)} />
-            {job.startedAt && <StatBox label="Started" value={formatDate(job.startedAt)} />}
-            {job.completedAt && <StatBox label="Completed" value={formatDate(job.completedAt)} />}
+            <StatBox label="Created" value={formatDate(j.createdAt)} />
+            {j.startedAt && <StatBox label="Started" value={formatDate(j.startedAt)} />}
+            {j.completedAt && <StatBox label="Completed" value={formatDate(j.completedAt)} />}
           </Box>
         </Layout.AppSectionCard>
       </Layout.AppSection>
 
       {/* Error Log */}
-      {(job.errorMessage || errorLog.length > 0) && (
+      {(j.errorMessage || errorLog.length > 0) && (
         <Box marginTop={6}>
           <Layout.AppSection heading="Errors">
             <Layout.AppSectionCard>
               <Box padding={4}>
-                {job.errorMessage && (
+                {j.errorMessage && (
                   <Box marginBottom={4} padding={3} backgroundColor="critical1" borderRadius={2}>
-                    <Text>{job.errorMessage}</Text>
+                    <Text>{j.errorMessage}</Text>
                   </Box>
                 )}
                 {errorLog.length > 0 && (
@@ -150,9 +177,9 @@ const JobDetailPage: NextPage = () => {
       )}
 
       {/* Recent Imports */}
-      {job.importedProducts && job.importedProducts.length > 0 && (
+      {j.importedProducts && j.importedProducts.length > 0 && (
         <Box marginTop={6}>
-          <Layout.AppSection heading={`Recent Imports (${job._count?.importedProducts ?? 0} total)`}>
+          <Layout.AppSection heading={`Recent Imports (${j._count?.importedProducts ?? 0} total)`}>
             <Layout.AppSectionCard>
               <Box as="table" width="100%">
                 <Box as="thead">
@@ -175,7 +202,7 @@ const JobDetailPage: NextPage = () => {
                   </Box>
                 </Box>
                 <Box as="tbody">
-                  {job.importedProducts.map((p) => (
+                  {j.importedProducts.map((p) => (
                     <Box as="tr" key={p.id}>
                       <Box as="td" padding={2}>
                         <Text>{p.cardName}</Text>

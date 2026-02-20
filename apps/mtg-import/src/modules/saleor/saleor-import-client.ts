@@ -15,12 +15,16 @@ import {
   CATEGORIES_QUERY,
   WAREHOUSES_QUERY,
   PRODUCT_BULK_CREATE_MUTATION,
+  PRODUCT_BULK_UPDATE_MUTATION,
   PRODUCT_BY_SLUG_QUERY,
+  PRODUCTS_BY_METADATA_QUERY,
   type SaleorChannel,
   type SaleorProductType,
   type SaleorCategory,
   type SaleorWarehouse,
   type ProductBulkCreateResult,
+  type ProductBulkUpdateResult,
+  type SaleorProductWithAttributes,
 } from "./graphql-operations";
 
 const logger = createLogger("SaleorImportClient");
@@ -179,5 +183,55 @@ export class SaleorImportClient {
     }
 
     return data;
+  }
+
+  /** Execute productBulkUpdate mutation */
+  async bulkUpdateProducts(
+    products: Array<{ id: string; input: Record<string, unknown> }>
+  ): Promise<ProductBulkUpdateResult> {
+    const result = await this.client
+      .mutation(PRODUCT_BULK_UPDATE_MUTATION, { products })
+      .toPromise();
+
+    if (result.error) {
+      throw new SaleorApiError(`productBulkUpdate failed: ${result.error.message}`);
+    }
+
+    const data = result.data?.productBulkUpdate as ProductBulkUpdateResult | undefined;
+    if (!data) {
+      throw new SaleorApiError("productBulkUpdate returned no data");
+    }
+
+    for (const row of data.results) {
+      if (row.errors.length > 0) {
+        logger.warn("Product update error", {
+          product: row.product?.name ?? "unknown",
+          errors: row.errors,
+        });
+      }
+    }
+
+    return data;
+  }
+
+  /** Fetch products by set_code metadata with full attributes */
+  async getProductsBySetCode(
+    setCode: string,
+    channel: string = "webstore"
+  ): Promise<SaleorProductWithAttributes[]> {
+    const result = await this.client
+      .query(PRODUCTS_BY_METADATA_QUERY, {
+        filter: { metadata: [{ key: "set_code", value: setCode }] },
+        channel,
+        first: 100,
+      })
+      .toPromise();
+
+    if (result.error) {
+      throw new SaleorApiError(`Failed to fetch products by metadata: ${result.error.message}`);
+    }
+
+    const edges = result.data?.products?.edges ?? [];
+    return edges.map((e: { node: SaleorProductWithAttributes }) => e.node);
   }
 }

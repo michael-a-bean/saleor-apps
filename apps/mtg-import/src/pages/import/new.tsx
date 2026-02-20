@@ -13,10 +13,20 @@ const NewImportPage: NextPage = () => {
   const [setSearch, setSetSearch] = useState("");
   const [priority, setPriority] = useState(2);
   const [showSetPicker, setShowSetPicker] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   const { data: sets } = trpcClient.sets.list.useQuery(undefined, {
-    enabled: importType === "SET",
+    enabled: importType === "SET" || importType === "BULK",
   });
+
+  const bulkEstimate = useMemo(() => {
+    if (!sets) return null;
+    const totalCards = sets.reduce((sum, s) => sum + s.card_count, 0);
+    return { totalSets: sets.length, totalCards };
+  }, [sets]);
 
   const createMutation = trpcClient.jobs.create.useMutation({
     onSuccess: (job) => {
@@ -47,16 +57,81 @@ const NewImportPage: NextPage = () => {
     setShowSetPicker(false);
   };
 
-  const handleSubmit = () => {
+  const doSubmit = () => {
     createMutation.mutate({
       type: importType,
-      setCode: importType === "SET" ? setCode.toLowerCase() : undefined,
+      setCode: importType === "SET" || importType === "BACKFILL" ? setCode.toLowerCase() : undefined,
       priority,
     });
   };
 
+  const handleSubmit = () => {
+    if (importType === "BULK") {
+      const cardCount = bulkEstimate?.totalCards ?? 100_000;
+      setConfirmDialog({
+        message: `This will import ALL ~${cardCount.toLocaleString()} cards from Scryfall (${bulkEstimate?.totalSets ?? "many"} sets). This may take several hours. Proceed?`,
+        onConfirm: () => { doSubmit(); setConfirmDialog(null); },
+      });
+    } else if (importType === "SET" && selectedSet && selectedSet.card_count > 500) {
+      setConfirmDialog({
+        message: `Import ${selectedSet.name} (${selectedSet.card_count} cards)? This may take a few minutes.`,
+        onConfirm: () => { doSubmit(); setConfirmDialog(null); },
+      });
+    } else {
+      doSubmit();
+    }
+  };
+
   return (
     <Box>
+      {/* Confirmation Dialog */}
+      {confirmDialog && (
+        <Box
+          position="fixed"
+          __top="0"
+          __left="0"
+          __width="100vw"
+          __height="100vh"
+          __zIndex="100"
+          display="flex"
+          alignItems="center"
+          justifyContent="center"
+        >
+          <Box
+            __position="absolute"
+            __top="0"
+            __left="0"
+            __width="100%"
+            __height="100%"
+            __backgroundColor="rgba(0,0,0,0.4)"
+            onClick={() => setConfirmDialog(null)}
+          />
+          <Box
+            __position="relative"
+            __zIndex="101"
+            __maxWidth="480px"
+            __width="90%"
+            backgroundColor="default1"
+            borderRadius={4}
+            padding={6}
+            __boxShadow="0 8px 32px rgba(0,0,0,0.2)"
+          >
+            <Text as="h2" size={6} fontWeight="bold" marginBottom={4}>
+              Confirm Import
+            </Text>
+            <Text marginBottom={6}>{confirmDialog.message}</Text>
+            <Box display="flex" gap={3} justifyContent="flex-end">
+              <Button variant="secondary" onClick={() => setConfirmDialog(null)}>
+                Cancel
+              </Button>
+              <Button variant="primary" onClick={confirmDialog.onConfirm}>
+                Confirm
+              </Button>
+            </Box>
+          </Box>
+        </Box>
+      )}
+
       <Box marginBottom={6}>
         <Text as="h1" size={10} fontWeight="bold">
           New Import
@@ -96,6 +171,19 @@ const NewImportPage: NextPage = () => {
                 ]}
               />
             </Box>
+
+            {importType === "BULK" && bulkEstimate && (
+              <Box padding={3} backgroundColor="default1" borderRadius={2}>
+                <Text size={2} fontWeight="bold" marginBottom={1}>
+                  Bulk Import Estimate
+                </Text>
+                <Text size={1} color="default2">
+                  {bulkEstimate.totalSets.toLocaleString()} sets, ~{bulkEstimate.totalCards.toLocaleString()} cards total.
+                  Each card creates up to 15 variants (5 conditions x 3 finishes).
+                  Estimated time: {Math.ceil(bulkEstimate.totalCards / 500)} - {Math.ceil(bulkEstimate.totalCards / 200)} minutes.
+                </Text>
+              </Box>
+            )}
 
             {importType === "SET" && (
               <Box>

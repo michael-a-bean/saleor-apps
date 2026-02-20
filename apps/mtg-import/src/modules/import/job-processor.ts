@@ -9,7 +9,7 @@
  * 5. Tracking progress with checkpoints for resume support
  */
 
-import type { PrismaClient, ImportJob } from "@/generated/prisma";
+import type { PrismaClient, ImportJob } from "@prisma/client";
 import type { Client } from "urql";
 
 import { createLogger } from "@/lib/logger";

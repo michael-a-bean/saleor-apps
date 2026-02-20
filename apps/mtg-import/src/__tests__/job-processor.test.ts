@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 import { JobProcessor, type ProcessorConfig } from "@/modules/import/job-processor";
-import type { ImportJob } from "@/generated/prisma";
+import type { ImportJob } from "@prisma/client";
 import type { ScryfallCard } from "@/modules/scryfall/types";
 
 // --- Mock card factory ---

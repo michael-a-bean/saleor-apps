@@ -398,9 +398,8 @@ const setsRouter = router({
         }
       }
 
-      // Stream Scryfall cards and find missing ones
+      // Search Scryfall for all cards in this set (paginated API, much faster than bulk data)
       const client = getScryfallClient();
-      const bulkData = new BulkDataManager({ client });
       const missingCards: Array<{
         scryfallId: string;
         name: string;
@@ -410,7 +409,7 @@ const setsRouter = router({
       let scryfallTotal = 0;
 
       try {
-        for await (const card of bulkData.streamSet(setCode)) {
+        for await (const card of client.searchAll(`set:${setCode}`, { unique: "prints" })) {
           if (!retailPaperFilter(card)) continue;
           scryfallTotal++;
 
@@ -431,7 +430,7 @@ const setsRouter = router({
         const msg = err instanceof Error ? err.message : String(err);
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: `Unable to scan: Scryfall bulk data unavailable. ${msg}`,
+          message: `Unable to scan: Scryfall API unavailable. ${msg}`,
         });
       }
 

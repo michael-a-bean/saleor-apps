@@ -211,10 +211,14 @@ const SetsPage: NextPage = () => {
       )}
 
       {/* Verification Detail Panel */}
-      {verifyingSet && verifyQuery.data && (
+      {verifyingSet && (
         <Box marginBottom={6}>
           <Layout.AppSection
-            heading={`Verification: ${verifyQuery.data.setName}`}
+            heading={
+              verifyQuery.data
+                ? `Verification: ${verifyQuery.data.setName}`
+                : `Verifying ${verifyingSet.toUpperCase()}...`
+            }
             sideContent={
               <Button variant="secondary" size="small" onClick={() => setVerifyingSet(null)}>
                 Close
@@ -222,31 +226,45 @@ const SetsPage: NextPage = () => {
             }
           >
             <Layout.AppSectionCard>
-              <Box display="flex" gap={6} padding={4} flexWrap="wrap">
-                <StatBox label="Set" value={verifyQuery.data.setCode.toUpperCase()} />
-                <StatBox label="Scryfall Total" value={String(verifyQuery.data.scryfallTotal)} />
-                <StatBox label="Imported" value={String(verifyQuery.data.imported)} />
-                <StatBox label="Newly Created" value={String(verifyQuery.data.newlyCreated)} />
-                <StatBox label="Already Existed" value={String(verifyQuery.data.alreadyExisted)} />
-                <StatBox label="Failed" value={String(verifyQuery.data.failed)} />
-                <StatBox
-                  label="Completeness"
-                  value={`${verifyQuery.data.completeness}%`}
-                  color={
-                    verifyQuery.data.completeness >= 100
-                      ? "success1"
-                      : verifyQuery.data.completeness >= 80
-                      ? "info1"
-                      : "critical1"
-                  }
-                />
-              </Box>
-              {verifyQuery.data.lastImportedAt && (
-                <Box padding={4} paddingTop={0}>
-                  <Text size={1} color="default2">
-                    Last imported: {new Date(verifyQuery.data.lastImportedAt).toLocaleString()}
-                  </Text>
+              {verifyQuery.isLoading && (
+                <Box padding={4}>
+                  <Text>Loading verification data...</Text>
                 </Box>
+              )}
+              {verifyQuery.error && (
+                <Box padding={4}>
+                  <Text color="critical1">{verifyQuery.error.message}</Text>
+                </Box>
+              )}
+              {verifyQuery.data && (
+                <>
+                  <Box display="flex" gap={6} padding={4} flexWrap="wrap">
+                    <StatBox label="Set" value={verifyQuery.data.setCode.toUpperCase()} />
+                    <StatBox label="Scryfall Total" value={String(verifyQuery.data.scryfallTotal)} />
+                    <StatBox label="Imported" value={String(verifyQuery.data.imported)} />
+                    <StatBox label="Newly Created" value={String(verifyQuery.data.newlyCreated)} />
+                    <StatBox label="Already Existed" value={String(verifyQuery.data.alreadyExisted)} />
+                    <StatBox label="Failed" value={String(verifyQuery.data.failed)} />
+                    <StatBox
+                      label="Completeness"
+                      value={`${verifyQuery.data.completeness}%`}
+                      color={
+                        verifyQuery.data.completeness >= 100
+                          ? "success1"
+                          : verifyQuery.data.completeness >= 80
+                          ? "info1"
+                          : "critical1"
+                      }
+                    />
+                  </Box>
+                  {verifyQuery.data.lastImportedAt && (
+                    <Box padding={4} paddingTop={0}>
+                      <Text size={1} color="default2">
+                        Last imported: {new Date(verifyQuery.data.lastImportedAt).toLocaleString()}
+                      </Text>
+                    </Box>
+                  )}
+                </>
               )}
             </Layout.AppSectionCard>
           </Layout.AppSection>

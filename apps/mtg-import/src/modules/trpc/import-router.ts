@@ -352,6 +352,7 @@ const setsRouter = router({
     .input(z.object({ setCode: z.string().min(2).max(10) }))
     .query(async ({ ctx, input }) => {
       const setCode = input.setCode.toLowerCase();
+      logger.info("Scan started", { setCode });
 
       // Get set metadata from Scryfall
       let setName = setCode.toUpperCase();
@@ -359,7 +360,7 @@ const setsRouter = router({
         const scryfallSet = await getScryfallClient().getSet(setCode);
         setName = scryfallSet.name;
       } catch {
-        // Will still scan from bulk data
+        // Will still scan via search API
       }
 
       // Get all ImportedProduct records for this set
@@ -433,6 +434,14 @@ const setsRouter = router({
           message: `Unable to scan: Scryfall API unavailable. ${msg}`,
         });
       }
+
+      logger.info("Scan complete", {
+        setCode,
+        scryfallTotal,
+        importedCount: successfulIds.size,
+        missingCount: missingCards.length,
+        failedCount: failedCards.length,
+      });
 
       return {
         setCode,

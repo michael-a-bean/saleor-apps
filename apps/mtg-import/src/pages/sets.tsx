@@ -361,32 +361,30 @@ const SetsPage: NextPage = () => {
                       </Box>
                       <Box as="td" padding={2} textAlign="right">
                         <Box display="flex" gap={2} justifyContent="flex-end">
+                          <Button
+                            size="small"
+                            variant="tertiary"
+                            onClick={() => {
+                              setVerifyingSet(null);
+                              setScanningSet(set.code);
+                            }}
+                            disabled={scanningSet === set.code && scanQuery.isLoading}
+                          >
+                            {scanningSet === set.code && scanQuery.isLoading
+                              ? "Scanning..."
+                              : "Scan"}
+                          </Button>
                           {audit && (
-                            <>
-                              <Button
-                                size="small"
-                                variant="tertiary"
-                                onClick={() => {
-                                  setVerifyingSet(null);
-                                  setScanningSet(set.code);
-                                }}
-                                disabled={scanningSet === set.code && scanQuery.isLoading}
-                              >
-                                {scanningSet === set.code && scanQuery.isLoading
-                                  ? "Scanning..."
-                                  : "Scan"}
-                              </Button>
-                              <Button
-                                size="small"
-                                variant="tertiary"
-                                onClick={() => {
-                                  setScanningSet(null);
-                                  setVerifyingSet(set.code);
-                                }}
-                              >
-                                Verify
-                              </Button>
-                            </>
+                            <Button
+                              size="small"
+                              variant="tertiary"
+                              onClick={() => {
+                                setScanningSet(null);
+                                setVerifyingSet(set.code);
+                              }}
+                            >
+                              Verify
+                            </Button>
                           )}
                           <Button
                             size="small"

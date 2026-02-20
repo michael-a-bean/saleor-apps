@@ -11,6 +11,7 @@ const SetsPage: NextPage = () => {
   const { data: sets, isLoading } = trpcClient.sets.list.useQuery();
   const { data: importStatus } = trpcClient.sets.importStatus.useQuery();
   const [verifyingSet, setVerifyingSet] = useState<string | null>(null);
+  const [scanningSet, setScanningSet] = useState<string | null>(null);
 
   const importedSets = new Map(
     (importStatus ?? []).map((audit) => [audit.setCode, audit])
@@ -25,12 +26,26 @@ const SetsPage: NextPage = () => {
     { enabled: !!verifyingSet }
   );
 
+  const scanQuery = trpcClient.sets.scan.useQuery(
+    { setCode: scanningSet ?? "" },
+    { enabled: !!scanningSet }
+  );
+
   const handleImportSet = (setCode: string) => {
     createMutation.mutate({
       type: "SET",
       setCode,
       priority: 2,
     });
+  };
+
+  const handleBackfill = (setCode: string) => {
+    createMutation.mutate({
+      type: "BACKFILL",
+      setCode,
+      priority: 2,
+    });
+    setScanningSet(null);
   };
 
   return (
@@ -40,6 +55,160 @@ const SetsPage: NextPage = () => {
           Sets
         </Text>
       </Box>
+
+      {/* Scan Results Panel */}
+      {scanningSet && (
+        <Box marginBottom={6}>
+          <Layout.AppSection
+            heading={
+              scanQuery.data
+                ? `Scan: ${scanQuery.data.setName}`
+                : `Scanning ${scanningSet.toUpperCase()}...`
+            }
+            sideContent={
+              <Box display="flex" gap={2}>
+                {scanQuery.data &&
+                  (scanQuery.data.missingCount > 0 || scanQuery.data.failedCount > 0) && (
+                    <Button
+                      variant="primary"
+                      size="small"
+                      onClick={() => handleBackfill(scanningSet)}
+                      disabled={createMutation.isLoading}
+                    >
+                      Backfill {scanQuery.data.missingCount + scanQuery.data.failedCount} Cards
+                    </Button>
+                  )}
+                <Button variant="secondary" size="small" onClick={() => setScanningSet(null)}>
+                  Close
+                </Button>
+              </Box>
+            }
+          >
+            <Layout.AppSectionCard>
+              {scanQuery.isLoading && (
+                <Box padding={4}>
+                  <Text>Scanning Scryfall data... this may take a moment.</Text>
+                </Box>
+              )}
+              {scanQuery.error && (
+                <Box padding={4}>
+                  <Text color="critical1">{scanQuery.error.message}</Text>
+                </Box>
+              )}
+              {scanQuery.data && (
+                <>
+                  <Box display="flex" gap={6} padding={4} flexWrap="wrap">
+                    <StatBox label="Scryfall Cards" value={String(scanQuery.data.scryfallTotal)} />
+                    <StatBox label="Imported" value={String(scanQuery.data.importedCount)} />
+                    <StatBox
+                      label="Missing"
+                      value={String(scanQuery.data.missingCount)}
+                      color={scanQuery.data.missingCount > 0 ? "critical1" : "success1"}
+                    />
+                    <StatBox
+                      label="Failed"
+                      value={String(scanQuery.data.failedCount)}
+                      color={scanQuery.data.failedCount > 0 ? "critical1" : "success1"}
+                    />
+                  </Box>
+
+                  {scanQuery.data.missingCount === 0 && scanQuery.data.failedCount === 0 && (
+                    <Box padding={4} paddingTop={0}>
+                      <Text color="success1">All cards imported successfully.</Text>
+                    </Box>
+                  )}
+
+                  {scanQuery.data.missingCards.length > 0 && (
+                    <Box padding={4} paddingTop={0}>
+                      <Text as="p" fontWeight="bold" marginBottom={2}>
+                        Missing Cards ({scanQuery.data.missingCards.length})
+                      </Text>
+                      <Box
+                        as="table"
+                        width="100%"
+                        __fontSize="13px"
+                      >
+                        <Box as="thead">
+                          <Box as="tr">
+                            <Box as="th" padding={1} textAlign="left">
+                              <Text size={1} fontWeight="bold">#</Text>
+                            </Box>
+                            <Box as="th" padding={1} textAlign="left">
+                              <Text size={1} fontWeight="bold">Name</Text>
+                            </Box>
+                            <Box as="th" padding={1} textAlign="left">
+                              <Text size={1} fontWeight="bold">Rarity</Text>
+                            </Box>
+                          </Box>
+                        </Box>
+                        <Box as="tbody">
+                          {scanQuery.data.missingCards.map((card) => (
+                            <Box as="tr" key={card.scryfallId}>
+                              <Box as="td" padding={1}>
+                                <Text size={1}>{card.collectorNumber}</Text>
+                              </Box>
+                              <Box as="td" padding={1}>
+                                <Text size={1}>{card.name}</Text>
+                              </Box>
+                              <Box as="td" padding={1}>
+                                <Text size={1}>{card.rarity}</Text>
+                              </Box>
+                            </Box>
+                          ))}
+                        </Box>
+                      </Box>
+                    </Box>
+                  )}
+
+                  {scanQuery.data.failedCards.length > 0 && (
+                    <Box padding={4} paddingTop={0}>
+                      <Text as="p" fontWeight="bold" marginBottom={2}>
+                        Failed Cards ({scanQuery.data.failedCards.length})
+                      </Text>
+                      <Box
+                        as="table"
+                        width="100%"
+                        __fontSize="13px"
+                      >
+                        <Box as="thead">
+                          <Box as="tr">
+                            <Box as="th" padding={1} textAlign="left">
+                              <Text size={1} fontWeight="bold">#</Text>
+                            </Box>
+                            <Box as="th" padding={1} textAlign="left">
+                              <Text size={1} fontWeight="bold">Name</Text>
+                            </Box>
+                            <Box as="th" padding={1} textAlign="left">
+                              <Text size={1} fontWeight="bold">Error</Text>
+                            </Box>
+                          </Box>
+                        </Box>
+                        <Box as="tbody">
+                          {scanQuery.data.failedCards.map((card) => (
+                            <Box as="tr" key={card.scryfallId}>
+                              <Box as="td" padding={1}>
+                                <Text size={1}>{card.collectorNumber}</Text>
+                              </Box>
+                              <Box as="td" padding={1}>
+                                <Text size={1}>{card.name}</Text>
+                              </Box>
+                              <Box as="td" padding={1}>
+                                <Text size={1} color="critical1">
+                                  {card.errorMessage ?? "Unknown error"}
+                                </Text>
+                              </Box>
+                            </Box>
+                          ))}
+                        </Box>
+                      </Box>
+                    </Box>
+                  )}
+                </>
+              )}
+            </Layout.AppSectionCard>
+          </Layout.AppSection>
+        </Box>
+      )}
 
       {/* Verification Detail Panel */}
       {verifyingSet && verifyQuery.data && (
@@ -89,7 +258,7 @@ const SetsPage: NextPage = () => {
         sideContent={
           <Text>
             Browse MTG sets from Scryfall. Click Import to start importing a set,
-            or Verify to check completeness of imported sets.
+            Verify to check counts, or Scan to find missing cards.
           </Text>
         }
       >
@@ -175,13 +344,31 @@ const SetsPage: NextPage = () => {
                       <Box as="td" padding={2} textAlign="right">
                         <Box display="flex" gap={2} justifyContent="flex-end">
                           {audit && (
-                            <Button
-                              size="small"
-                              variant="tertiary"
-                              onClick={() => setVerifyingSet(set.code)}
-                            >
-                              Verify
-                            </Button>
+                            <>
+                              <Button
+                                size="small"
+                                variant="tertiary"
+                                onClick={() => {
+                                  setVerifyingSet(null);
+                                  setScanningSet(set.code);
+                                }}
+                                disabled={scanningSet === set.code && scanQuery.isLoading}
+                              >
+                                {scanningSet === set.code && scanQuery.isLoading
+                                  ? "Scanning..."
+                                  : "Scan"}
+                              </Button>
+                              <Button
+                                size="small"
+                                variant="tertiary"
+                                onClick={() => {
+                                  setScanningSet(null);
+                                  setVerifyingSet(set.code);
+                                }}
+                              >
+                                Verify
+                              </Button>
+                            </>
                           )}
                           <Button
                             size="small"

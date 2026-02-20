@@ -17,7 +17,7 @@ import type { ImportJobStatus, ImportJobType } from "@prisma/client";
 
 import { createLogger } from "@/lib/logger";
 import { env } from "@/lib/env";
-import { ScryfallClient, BulkDataManager } from "../scryfall";
+import { ScryfallClient, BulkDataManager, retailPaperFilter } from "../scryfall";
 import { JobProcessor } from "../import/job-processor";
 import { MtgjsonBulkDataManager } from "../mtgjson";
 import { protectedClientProcedure } from "./protected-client-procedure";
@@ -114,11 +114,11 @@ const jobsRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      // Validate: SET type requires setCode
-      if (input.type === "SET" && !input.setCode) {
+      // Validate: SET and BACKFILL types require setCode
+      if ((input.type === "SET" || input.type === "BACKFILL") && !input.setCode) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "setCode is required for SET import type",
+          message: `setCode is required for ${input.type} import type`,
         });
       }
 
@@ -139,9 +139,9 @@ const jobsRouter = router({
         });
       }
 
-      // Get card count for SET imports
+      // Get card count for SET/BACKFILL imports
       let cardsTotal = 0;
-      if (input.type === "SET" && input.setCode) {
+      if ((input.type === "SET" || input.type === "BACKFILL") && input.setCode) {
         try {
           const set = await getScryfallClient().getSet(input.setCode.toLowerCase());
           cardsTotal = set.card_count;
@@ -345,6 +345,106 @@ const setsRouter = router({
         failed: failedCount,
         completeness,
         lastImportedAt: audit?.lastImportedAt ?? null,
+      };
+    }),
+  /** Scan a set for missing/failed cards vs Scryfall */
+  scan: protectedClientProcedure
+    .input(z.object({ setCode: z.string().min(2).max(10) }))
+    .query(async ({ ctx, input }) => {
+      const setCode = input.setCode.toLowerCase();
+
+      // Get set metadata from Scryfall
+      let setName = setCode.toUpperCase();
+      try {
+        const scryfallSet = await getScryfallClient().getSet(setCode);
+        setName = scryfallSet.name;
+      } catch {
+        // Will still scan from bulk data
+      }
+
+      // Get all ImportedProduct records for this set
+      const imported = await ctx.prisma.importedProduct.findMany({
+        where: { setCode },
+        select: {
+          scryfallId: true,
+          success: true,
+          errorMessage: true,
+          cardName: true,
+          collectorNumber: true,
+          rarity: true,
+        },
+      });
+
+      const successfulIds = new Set<string>();
+      const failedCards: Array<{
+        scryfallId: string;
+        name: string;
+        collectorNumber: string;
+        rarity: string;
+        errorMessage: string | null;
+      }> = [];
+
+      for (const record of imported) {
+        if (record.success) {
+          successfulIds.add(record.scryfallId);
+        } else {
+          failedCards.push({
+            scryfallId: record.scryfallId,
+            name: record.cardName,
+            collectorNumber: record.collectorNumber,
+            rarity: record.rarity,
+            errorMessage: record.errorMessage,
+          });
+        }
+      }
+
+      // Stream Scryfall cards and find missing ones
+      const client = getScryfallClient();
+      const bulkData = new BulkDataManager({ client });
+      const missingCards: Array<{
+        scryfallId: string;
+        name: string;
+        collectorNumber: string;
+        rarity: string;
+      }> = [];
+      let scryfallTotal = 0;
+
+      try {
+        for await (const card of bulkData.streamSet(setCode)) {
+          if (!retailPaperFilter(card)) continue;
+          scryfallTotal++;
+
+          if (!successfulIds.has(card.id)) {
+            // Check if it's already in the failed list
+            const alreadyFailed = failedCards.some((f) => f.scryfallId === card.id);
+            if (!alreadyFailed) {
+              missingCards.push({
+                scryfallId: card.id,
+                name: card.name,
+                collectorNumber: card.collector_number,
+                rarity: card.rarity,
+              });
+            }
+          }
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `Unable to scan: Scryfall bulk data unavailable. ${msg}`,
+        });
+      }
+
+      return {
+        setCode,
+        setName,
+        scannedAt: new Date().toISOString(),
+        scryfallTotal,
+        importedCount: successfulIds.size,
+        missingCount: missingCards.length,
+        failedCount: failedCards.length,
+        missingCards,
+        failedCards,
       };
     }),
 });

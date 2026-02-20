@@ -159,8 +159,8 @@ export class JobProcessor {
         },
       });
 
-      // Update SetAudit for completed SET imports
-      if (finalStatus === "COMPLETED" && job.type === "SET" && job.setCode) {
+      // Update SetAudit for completed SET/BACKFILL imports
+      if (finalStatus === "COMPLETED" && (job.type === "SET" || job.type === "BACKFILL") && job.setCode) {
         await this.updateSetAudit(job);
       }
 
@@ -209,6 +209,9 @@ export class JobProcessor {
     if (job.type === "SET" && job.setCode) {
       return this.streamSetWithFallback(job.setCode);
     }
+    if (job.type === "BACKFILL" && job.setCode) {
+      return this.streamBackfillForSet(job.setCode);
+    }
     return this.streamAllWithFallback();
   }
 
@@ -246,6 +249,33 @@ export class JobProcessor {
     }
   }
 
+  /**
+   * Stream only missing/failed cards for a set (smart BACKFILL).
+   * Queries ImportedProduct for successfully imported scryfallIds,
+   * then yields only cards NOT in that set.
+   */
+  private async *streamBackfillForSet(setCode: string): AsyncGenerator<ScryfallCard> {
+    const importedProducts = await this.prisma.importedProduct.findMany({
+      where: {
+        setCode: setCode.toLowerCase(),
+        success: true,
+      },
+      select: { scryfallId: true },
+    });
+
+    const importedIds = new Set(importedProducts.map((p) => p.scryfallId));
+    logger.info("Smart backfill: filtering out already-imported cards", {
+      setCode,
+      importedCount: importedIds.size,
+    });
+
+    for await (const card of this.streamSetWithFallback(setCode)) {
+      if (!importedIds.has(card.id)) {
+        yield card;
+      }
+    }
+  }
+
   private async processBatch(
     cards: ScryfallCard[],
     job: ImportJob,
@@ -273,9 +303,23 @@ export class JobProcessor {
           result.cardsProcessed++;
           result.variantsCreated += row.product.variants.length;
 
-          // Record imported product
-          await this.prisma.importedProduct.create({
-            data: {
+          // Record imported product (upsert to handle backfill of previously failed cards)
+          await this.prisma.importedProduct.upsert({
+            where: {
+              scryfallId_setCode: { scryfallId: card.id, setCode: card.set },
+            },
+            update: {
+              importJobId: job.id,
+              scryfallUri: card.scryfall_uri,
+              cardName: card.name.substring(0, 250),
+              collectorNumber: card.collector_number,
+              rarity: card.rarity,
+              saleorProductId: row.product.id,
+              variantCount: row.product.variants.length,
+              success: true,
+              errorMessage: null,
+            },
+            create: {
               importJobId: job.id,
               scryfallId: card.id,
               scryfallUri: card.scryfall_uri,
@@ -299,8 +343,20 @@ export class JobProcessor {
             collector: card.collector_number,
           });
 
-          await this.prisma.importedProduct.create({
-            data: {
+          await this.prisma.importedProduct.upsert({
+            where: {
+              scryfallId_setCode: { scryfallId: card.id, setCode: card.set },
+            },
+            update: {
+              importJobId: job.id,
+              cardName: card.name.substring(0, 250),
+              collectorNumber: card.collector_number,
+              rarity: card.rarity,
+              saleorProductId: "existing",
+              success: true,
+              errorMessage: "Already exists in Saleor (duplicate slug)",
+            },
+            create: {
               importJobId: job.id,
               scryfallId: card.id,
               cardName: card.name.substring(0, 250),
@@ -317,8 +373,20 @@ export class JobProcessor {
           const errorMsg = row.errors.map((e) => e.message).join("; ");
           result.errorLog.push(`${card.name} [${card.set}#${card.collector_number}]: ${errorMsg}`);
 
-          await this.prisma.importedProduct.create({
-            data: {
+          await this.prisma.importedProduct.upsert({
+            where: {
+              scryfallId_setCode: { scryfallId: card.id, setCode: card.set },
+            },
+            update: {
+              importJobId: job.id,
+              cardName: card.name.substring(0, 250),
+              collectorNumber: card.collector_number,
+              rarity: card.rarity,
+              saleorProductId: "",
+              success: false,
+              errorMessage: errorMsg.substring(0, 1000),
+            },
+            create: {
               importJobId: job.id,
               scryfallId: card.id,
               cardName: card.name.substring(0, 250),

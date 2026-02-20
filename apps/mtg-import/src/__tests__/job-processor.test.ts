@@ -165,8 +165,9 @@ function createMocks(cards: ScryfallCard[] = []) {
       findFirst: vi.fn(),
     },
     importedProduct: {
-      create: vi.fn().mockResolvedValue({}),
+      upsert: vi.fn().mockResolvedValue({}),
       count: vi.fn().mockResolvedValue(0),
+      findMany: vi.fn().mockResolvedValue([]),
     },
     setAudit: {
       upsert: vi.fn().mockResolvedValue({}),
@@ -365,10 +366,10 @@ describe("JobProcessor", () => {
 
       await processor.processJob(makeJob());
 
-      expect(mocks.prisma.importedProduct.create).toHaveBeenCalledTimes(2);
-      const firstCall = mocks.prisma.importedProduct.create.mock.calls[0][0];
-      expect(firstCall.data.success).toBe(true);
-      expect(firstCall.data.importJobId).toBe("job-1");
+      expect(mocks.prisma.importedProduct.upsert).toHaveBeenCalledTimes(2);
+      const firstCall = mocks.prisma.importedProduct.upsert.mock.calls[0][0];
+      expect(firstCall.create.success).toBe(true);
+      expect(firstCall.create.importJobId).toBe("job-1");
     });
 
     it("records ImportedProduct with error for failed cards", async () => {
@@ -386,9 +387,9 @@ describe("JobProcessor", () => {
 
       await processor.processJob(makeJob());
 
-      const call = mocks.prisma.importedProduct.create.mock.calls[0][0];
-      expect(call.data.success).toBe(false);
-      expect(call.data.errorMessage).toContain("Invalid product data");
+      const call = mocks.prisma.importedProduct.upsert.mock.calls[0][0];
+      expect(call.create.success).toBe(false);
+      expect(call.create.errorMessage).toContain("Invalid product data");
     });
 
     it("returns correct process result counts", async () => {
@@ -558,10 +559,10 @@ describe("JobProcessor", () => {
 
       await processor.processJob(makeJob());
 
-      const call = mocks.prisma.importedProduct.create.mock.calls[0][0];
-      expect(call.data.success).toBe(true);
-      expect(call.data.saleorProductId).toBe("existing");
-      expect(call.data.errorMessage).toContain("Already exists");
+      const call = mocks.prisma.importedProduct.upsert.mock.calls[0][0];
+      expect(call.create.success).toBe(true);
+      expect(call.create.saleorProductId).toBe("existing");
+      expect(call.create.errorMessage).toContain("Already exists");
     });
 
     it("handles mixed batch: new products + duplicates + real errors", async () => {
@@ -727,6 +728,120 @@ describe("JobProcessor", () => {
 
       const lastCall = mocks.prisma.importJob.update.mock.calls.at(-1)![0];
       expect(lastCall.data.skipped).toBe(1);
+    });
+  });
+
+  describe("processJob — smart BACKFILL stream", () => {
+    it("filters out already-imported cards", async () => {
+      const cards = [
+        makeCard({ id: "card-1", name: "Already Imported" }),
+        makeCard({ id: "card-2", name: "Also Imported" }),
+        makeCard({ id: "card-3", name: "Missing Card" }),
+      ];
+      const mocks = createMocks(cards);
+      mocks.bulkCreateProducts.mockResolvedValue(makeBulkCreateResult(1));
+      // card-1 and card-2 are already successfully imported
+      mocks.prisma.importedProduct.findMany.mockResolvedValue([
+        { scryfallId: "card-1" },
+        { scryfallId: "card-2" },
+      ]);
+
+      const processor = new JobProcessor({
+        scryfallClient: mocks.scryfallClient as any,
+        bulkDataManager: mocks.bulkData as any,
+        prisma: mocks.prisma as any,
+        gqlClient: mocks.gqlClient as any,
+        saleorImportClient: mocks.saleorImportClient as any,
+      });
+
+      const result = await processor.processJob(
+        makeJob({ type: "BACKFILL" as any, setCode: "tst" })
+      );
+
+      // Should query for existing imports
+      expect(mocks.prisma.importedProduct.findMany).toHaveBeenCalledWith({
+        where: { setCode: "tst", success: true },
+        select: { scryfallId: true },
+      });
+
+      // Only card-3 should be processed (card-1 and card-2 filtered out)
+      expect(result.cardsProcessed).toBe(1);
+    });
+
+    it("re-attempts previously failed cards", async () => {
+      const failedCard = makeCard({ id: "failed-1", name: "Previously Failed" });
+      const mocks = createMocks([failedCard]);
+      mocks.bulkCreateProducts.mockResolvedValue(makeBulkCreateResult(1));
+      // No successful imports — failed cards are NOT in the success set
+      mocks.prisma.importedProduct.findMany.mockResolvedValue([]);
+
+      const processor = new JobProcessor({
+        scryfallClient: mocks.scryfallClient as any,
+        bulkDataManager: mocks.bulkData as any,
+        prisma: mocks.prisma as any,
+        gqlClient: mocks.gqlClient as any,
+        saleorImportClient: mocks.saleorImportClient as any,
+      });
+
+      const result = await processor.processJob(
+        makeJob({ type: "BACKFILL" as any, setCode: "tst" })
+      );
+
+      // Failed card should be re-attempted
+      expect(result.cardsProcessed).toBe(1);
+    });
+
+    it("skips all cards when set is fully imported", async () => {
+      const cards = [
+        makeCard({ id: "card-1" }),
+        makeCard({ id: "card-2" }),
+      ];
+      const mocks = createMocks(cards);
+      // All cards already imported
+      mocks.prisma.importedProduct.findMany.mockResolvedValue([
+        { scryfallId: "card-1" },
+        { scryfallId: "card-2" },
+      ]);
+
+      const processor = new JobProcessor({
+        scryfallClient: mocks.scryfallClient as any,
+        bulkDataManager: mocks.bulkData as any,
+        prisma: mocks.prisma as any,
+        gqlClient: mocks.gqlClient as any,
+        saleorImportClient: mocks.saleorImportClient as any,
+      });
+
+      const result = await processor.processJob(
+        makeJob({ type: "BACKFILL" as any, setCode: "tst" })
+      );
+
+      // No cards should be processed
+      expect(result.cardsProcessed).toBe(0);
+      expect(mocks.bulkCreateProducts).not.toHaveBeenCalled();
+    });
+
+    it("updates SetAudit after successful BACKFILL", async () => {
+      const cards = [makeCard({ id: "card-1", set: "lea" })];
+      const mocks = createMocks(cards);
+      mocks.bulkCreateProducts.mockResolvedValue(makeBulkCreateResult(1));
+      mocks.prisma.importedProduct.findMany.mockResolvedValue([]);
+      mocks.prisma.importedProduct.count.mockResolvedValue(1);
+
+      const processor = new JobProcessor({
+        scryfallClient: mocks.scryfallClient as any,
+        bulkDataManager: mocks.bulkData as any,
+        prisma: mocks.prisma as any,
+        gqlClient: mocks.gqlClient as any,
+        saleorImportClient: mocks.saleorImportClient as any,
+      });
+
+      await processor.processJob(
+        makeJob({ type: "BACKFILL" as any, setCode: "lea" })
+      );
+
+      expect(mocks.prisma.setAudit.upsert).toHaveBeenCalledTimes(1);
+      const upsertCall = mocks.prisma.setAudit.upsert.mock.calls[0][0];
+      expect(upsertCall.where.installationId_setCode.setCode).toBe("lea");
     });
   });
 

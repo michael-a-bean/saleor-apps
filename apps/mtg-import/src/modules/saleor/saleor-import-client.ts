@@ -172,13 +172,18 @@ export class SaleorImportClient {
       throw new SaleorApiError("productBulkCreate returned no data");
     }
 
-    // Log any row-level errors
+    // Log row-level errors (skip slug duplicates — handled by job processor as expected skips)
     for (const row of data.results) {
       if (row.errors.length > 0) {
-        logger.warn("Product creation error", {
-          product: row.product?.name ?? "unknown",
-          errors: row.errors,
-        });
+        const isSlugDuplicate = row.errors.every(
+          (e) => e.code === "UNIQUE" && (e.path === "slug" || e.message?.includes("Slug already exists"))
+        );
+        if (!isSlugDuplicate) {
+          logger.warn("Product creation error", {
+            product: row.product?.name ?? "unknown",
+            errors: row.errors,
+          });
+        }
       }
     }
 

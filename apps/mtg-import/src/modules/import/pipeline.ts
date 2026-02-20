@@ -166,8 +166,18 @@ function makeProductSlug(card: ScryfallCard): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "")
     .substring(0, 200);
+  // Sanitize collector number (may contain ★ or other special chars)
+  const safeCollector = card.collector_number
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
   // Append set code + collector number for uniqueness across reprints
-  return `${baseName}-${card.set}-${card.collector_number}`.substring(0, 255);
+  const slug = `${baseName}-${card.set}-${safeCollector}`.substring(0, 255);
+  // Final guard: if slug is empty or only hyphens, use scryfall ID prefix
+  if (!slug || /^-+$/.test(slug)) {
+    return `card-${card.id.substring(0, 36)}`;
+  }
+  return slug;
 }
 
 /** Build EditorJS description from card data */

@@ -212,7 +212,7 @@ export class JobProcessor {
     if (job.type === "BACKFILL" && job.setCode) {
       return this.streamBackfillForSet(job.setCode);
     }
-    return this.streamAllWithFallback();
+    return this.streamAllWithBackfillFilter();
   }
 
   /**
@@ -229,6 +229,37 @@ export class JobProcessor {
       } else {
         throw error;
       }
+    }
+  }
+
+  /**
+   * Stream all cards with smart backfill filtering.
+   * Pre-filters already-imported cards to avoid wasted Saleor API calls.
+   */
+  private async *streamAllWithBackfillFilter(): AsyncGenerator<ScryfallCard> {
+    const importedProducts = await this.prisma.importedProduct.findMany({
+      where: { success: true },
+      select: { scryfallId: true },
+    });
+
+    const importedIds = new Set(importedProducts.map((p) => p.scryfallId));
+    logger.info("Bulk import: filtering out already-imported cards", {
+      importedCount: importedIds.size,
+    });
+
+    let skippedCount = 0;
+    for await (const card of this.streamAllWithFallback()) {
+      if (importedIds.has(card.id)) {
+        skippedCount++;
+        continue;
+      }
+      yield card;
+    }
+
+    if (skippedCount > 0) {
+      logger.info("Bulk import: pre-filtered already-imported cards", {
+        skippedCount,
+      });
     }
   }
 

@@ -13,6 +13,7 @@ import { createLogger } from "@/lib/logger";
 import type { AttributeDef } from "../import/attribute-map";
 import {
   ATTRIBUTE_BULK_CREATE_MUTATION,
+  ATTRIBUTES_BY_SLUGS_QUERY,
   type AttributeBulkCreateResult,
   CATEGORIES_QUERY,
   CHANNELS_QUERY,
@@ -252,54 +253,77 @@ export class SaleorImportClient {
     productTypeId: string
   ): Promise<{ created: number; assigned: number; errors: string[] }> {
     const errors: string[] = [];
+    const missingSlugs = missingDefs.map((d) => d.slug);
 
-    // Step 1: Bulk-create the missing attributes
-    const createInputs = missingDefs.map((def) => ({
-      name: def.name,
-      slug: def.slug,
-      type: "PRODUCT_TYPE" as const,
-      inputType: def.inputType,
-    }));
-
-    const createResult = await this.client
-      .mutation(ATTRIBUTE_BULK_CREATE_MUTATION, { attributes: createInputs })
+    // Step 1: Check which attributes already exist globally in Saleor
+    const existingResult = await this.client
+      .query(ATTRIBUTES_BY_SLUGS_QUERY, { slugs: missingSlugs })
       .toPromise();
 
-    if (createResult.error) {
-      throw new SaleorApiError(`attributeBulkCreate failed: ${createResult.error.message}`);
-    }
+    const existingAttrs: Array<{ id: string; slug: string }> =
+      (existingResult.data?.attributes?.edges ?? []).map(
+        (e: { node: { id: string; slug: string } }) => e.node
+      );
 
-    const createData = createResult.data?.attributeBulkCreate as AttributeBulkCreateResult | undefined;
-    if (!createData) {
-      throw new SaleorApiError("attributeBulkCreate returned no data");
-    }
+    const existingSlugSet = new Set(existingAttrs.map((a) => a.slug));
+    const existingIds = existingAttrs.map((a) => a.id);
+    const trulyMissingDefs = missingDefs.filter((d) => !existingSlugSet.has(d.slug));
 
-    // Collect successfully created attribute IDs
-    const createdIds: string[] = [];
-    for (const row of createData.results) {
-      if (row.attribute) {
-        createdIds.push(row.attribute.id);
+    logger.info("Attribute lookup", {
+      requested: missingSlugs.length,
+      alreadyExist: existingAttrs.length,
+      needCreation: trulyMissingDefs.length,
+    });
+
+    // Step 2: Bulk-create only the truly missing attributes
+    let newlyCreatedIds: string[] = [];
+    if (trulyMissingDefs.length > 0) {
+      const createInputs = trulyMissingDefs.map((def) => ({
+        name: def.name,
+        slug: def.slug,
+        type: "PRODUCT_TYPE" as const,
+        inputType: def.inputType,
+      }));
+
+      const createResult = await this.client
+        .mutation(ATTRIBUTE_BULK_CREATE_MUTATION, { attributes: createInputs })
+        .toPromise();
+
+      if (createResult.error) {
+        throw new SaleorApiError(`attributeBulkCreate failed: ${createResult.error.message}`);
       }
-      if (row.errors && row.errors.length > 0) {
-        for (const err of row.errors) {
-          errors.push(`Create ${err.path ?? "attribute"}: ${err.message ?? err.code}`);
+
+      const createData = createResult.data?.attributeBulkCreate as AttributeBulkCreateResult | undefined;
+      if (!createData) {
+        throw new SaleorApiError("attributeBulkCreate returned no data");
+      }
+
+      for (const row of createData.results) {
+        if (row.attribute) {
+          newlyCreatedIds.push(row.attribute.id);
+        }
+        if (row.errors && row.errors.length > 0) {
+          for (const err of row.errors) {
+            errors.push(`Create ${err.path ?? "attribute"}: ${err.message ?? err.code}`);
+          }
         }
       }
+
+      for (const err of createData.errors) {
+        errors.push(`Bulk create: ${err.message ?? err.code}`);
+      }
+
+      logger.info("Attributes created", { count: newlyCreatedIds.length, errors: errors.length });
     }
 
-    // Also log top-level errors
-    for (const err of createData.errors) {
-      errors.push(`Bulk create: ${err.message ?? err.code}`);
+    // Step 3: Assign ALL attributes (existing + newly created) to the product type
+    const allIdsToAssign = [...existingIds, ...newlyCreatedIds];
+
+    if (allIdsToAssign.length === 0) {
+      return { created: newlyCreatedIds.length, assigned: 0, errors };
     }
 
-    logger.info("Attributes created", { count: createdIds.length, errors: errors.length });
-
-    if (createdIds.length === 0) {
-      return { created: 0, assigned: 0, errors };
-    }
-
-    // Step 2: Assign created attributes to the product type
-    const assignOps = createdIds.map((id) => ({
+    const assignOps = allIdsToAssign.map((id) => ({
       id,
       type: "PRODUCT" as const,
     }));
@@ -324,13 +348,15 @@ export class SaleorImportClient {
       errors.push(`Assign: ${err.message ?? err.code}`);
     }
 
-    const assignedCount = assignData.errors.length === 0 ? createdIds.length : 0;
+    const assignedCount = assignData.errors.length === 0 ? allIdsToAssign.length : 0;
 
     logger.info("Attributes assigned to product type", {
       productTypeId,
       assigned: assignedCount,
+      existing: existingIds.length,
+      newlyCreated: newlyCreatedIds.length,
     });
 
-    return { created: createdIds.length, assigned: assignedCount, errors };
+    return { created: newlyCreatedIds.length, assigned: assignedCount, errors };
   }
 }

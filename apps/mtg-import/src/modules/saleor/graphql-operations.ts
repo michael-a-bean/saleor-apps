@@ -74,6 +74,21 @@ export const WAREHOUSES_QUERY = gql`
   }
 `;
 
+export const ATTRIBUTES_BY_SLUGS_QUERY = gql`
+  query AttributesBySlugs($slugs: [String!]!) {
+    attributes(first: 100, filter: { slugs: $slugs }) {
+      edges {
+        node {
+          id
+          slug
+          name
+          inputType
+        }
+      }
+    }
+  }
+`;
+
 export const PRODUCT_BY_SLUG_QUERY = gql`
   query ProductBySlug($slug: String!, $channel: String!) {
     product(slug: $slug, channel: $channel) {

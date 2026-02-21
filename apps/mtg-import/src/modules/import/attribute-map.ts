@@ -30,10 +30,10 @@ export const ATTRIBUTE_DEFS: AttributeDef[] = [
   { scryfallField: "id", name: "Scryfall ID", slug: "mtg-scryfall-id", inputType: "PLAIN_TEXT" },
   { scryfallField: "oracle_id", name: "Oracle ID", slug: "mtg-oracle-id", inputType: "PLAIN_TEXT" },
   { scryfallField: "tcgplayer_id", name: "TCGPlayer ID", slug: "mtg-tcgplayer-id", inputType: "PLAIN_TEXT" },
-  { scryfallField: "tcgplayer_etched_id", name: "TCGPlayer Etched ID", slug: "mtg-tcgplayer-etched-id", inputType: "PLAIN_TEXT" },
-  { scryfallField: "cardmarket_id", name: "Cardmarket ID", slug: "mtg-cardmarket-id", inputType: "PLAIN_TEXT" },
-  { scryfallField: "mtgo_id", name: "MTGO ID", slug: "mtg-mtgo-id", inputType: "PLAIN_TEXT" },
-  { scryfallField: "arena_id", name: "Arena ID", slug: "mtg-arena-id", inputType: "PLAIN_TEXT" },
+  { scryfallField: "tcgplayer_etched_id", name: "TCGPlayer Etched ID", slug: "tcgplayer-etched-id", inputType: "PLAIN_TEXT" },
+  { scryfallField: "cardmarket_id", name: "Cardmarket ID", slug: "cardmarket-id", inputType: "PLAIN_TEXT" },
+  { scryfallField: "mtgo_id", name: "MTGO ID", slug: "mtgo-id", inputType: "PLAIN_TEXT" },
+  { scryfallField: "arena_id", name: "Arena ID", slug: "arena-id", inputType: "PLAIN_TEXT" },
   // Card properties
   { scryfallField: "rarity", name: "Rarity", slug: "mtg-rarity", inputType: "DROPDOWN" },
   { scryfallField: "type_line", name: "Type Line", slug: "mtg-type-line", inputType: "PLAIN_TEXT" },
@@ -45,13 +45,13 @@ export const ATTRIBUTE_DEFS: AttributeDef[] = [
   { scryfallField: "collector_number", name: "Collector #", slug: "mtg-collector-number", inputType: "PLAIN_TEXT" },
   { scryfallField: "power", name: "Power", slug: "mtg-power", inputType: "PLAIN_TEXT" },
   { scryfallField: "toughness", name: "Toughness", slug: "mtg-toughness", inputType: "PLAIN_TEXT" },
-  { scryfallField: "loyalty", name: "Loyalty", slug: "mtg-loyalty", inputType: "PLAIN_TEXT" },
+  { scryfallField: "loyalty", name: "Loyalty", slug: "loyalty", inputType: "PLAIN_TEXT" },
   // Boolean flags
-  { scryfallField: "reserved", name: "Reserved List", slug: "mtg-reserved", inputType: "BOOLEAN" },
-  { scryfallField: "reprint", name: "Is Reprint", slug: "mtg-is-reprint", inputType: "BOOLEAN" },
-  { scryfallField: "promo", name: "Is Promo", slug: "mtg-is-promo", inputType: "BOOLEAN" },
-  { scryfallField: "full_art", name: "Is Full Art", slug: "mtg-is-full-art", inputType: "BOOLEAN" },
-  { scryfallField: "digital", name: "Is Digital Only", slug: "mtg-is-digital", inputType: "BOOLEAN" },
+  { scryfallField: "reserved", name: "Reserved List", slug: "reserved-list", inputType: "BOOLEAN" },
+  { scryfallField: "reprint", name: "Is Reprint", slug: "is-reprint", inputType: "BOOLEAN" },
+  { scryfallField: "promo", name: "Is Promo", slug: "is-promo", inputType: "BOOLEAN" },
+  { scryfallField: "full_art", name: "Is Full Art", slug: "is-full-art", inputType: "BOOLEAN" },
+  { scryfallField: "digital", name: "Is Digital Only", slug: "is-digital-only", inputType: "BOOLEAN" },
 ];
 
 /**

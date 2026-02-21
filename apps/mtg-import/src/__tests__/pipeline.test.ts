@@ -64,7 +64,7 @@ const mockAttributes: SaleorAttribute[] = [
   { id: "attr-1", name: "Scryfall ID", slug: "mtg-scryfall-id", inputType: "PLAIN_TEXT" },
   { id: "attr-2", name: "Rarity", slug: "mtg-rarity", inputType: "DROPDOWN" },
   { id: "attr-3", name: "Mana Value", slug: "mtg-mana-value", inputType: "NUMERIC" },
-  { id: "attr-4", name: "Reserved List", slug: "mtg-reserved", inputType: "BOOLEAN" },
+  { id: "attr-4", name: "Reserved List", slug: "reserved-list", inputType: "BOOLEAN" },
   { id: "attr-5", name: "Set Code", slug: "mtg-set-code", inputType: "PLAIN_TEXT" },
 ];
 

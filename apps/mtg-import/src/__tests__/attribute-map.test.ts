@@ -13,9 +13,9 @@ describe("ATTRIBUTE_DEFS", () => {
     expect(ATTRIBUTE_DEFS).toHaveLength(23);
   });
 
-  it("all slugs start with mtg-", () => {
+  it("all slugs are valid kebab-case identifiers", () => {
     for (const def of ATTRIBUTE_DEFS) {
-      expect(def.slug).toMatch(/^mtg-/);
+      expect(def.slug).toMatch(/^[a-z][a-z0-9-]+$/);
     }
   });
 
@@ -31,7 +31,7 @@ describe("ATTRIBUTE_DEFS", () => {
     const cmcDef = ATTRIBUTE_DEFS.find((d) => d.slug === "mtg-mana-value");
     expect(cmcDef?.inputType).toBe("NUMERIC");
 
-    const reservedDef = ATTRIBUTE_DEFS.find((d) => d.slug === "mtg-reserved");
+    const reservedDef = ATTRIBUTE_DEFS.find((d) => d.slug === "reserved-list");
     expect(reservedDef?.inputType).toBe("BOOLEAN");
 
     const scryfallIdDef = ATTRIBUTE_DEFS.find((d) => d.slug === "mtg-scryfall-id");
@@ -56,7 +56,7 @@ describe("buildProductAttributes", () => {
     { id: "a1", name: "Scryfall ID", slug: "mtg-scryfall-id", inputType: "PLAIN_TEXT" },
     { id: "a2", name: "Rarity", slug: "mtg-rarity", inputType: "DROPDOWN" },
     { id: "a3", name: "Mana Value", slug: "mtg-mana-value", inputType: "NUMERIC" },
-    { id: "a4", name: "Reserved List", slug: "mtg-reserved", inputType: "BOOLEAN" },
+    { id: "a4", name: "Reserved List", slug: "reserved-list", inputType: "BOOLEAN" },
   ];
   const attrIdMap = buildAttributeIdMap(saleorAttrs);
 

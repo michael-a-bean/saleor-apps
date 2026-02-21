@@ -1,18 +1,25 @@
 -- Baseline migration for mtg-import standalone schema.
 -- These tables already exist in the shared database (created by inventory-ops).
--- This migration will be marked as applied via `prisma migrate resolve --applied`.
+-- All statements use IF NOT EXISTS / OR REPLACE so this migration is safe to
+-- run against a database where the objects already exist.
 --
 -- NOTE: AppInstallation is NOT created here — it is owned by inventory-ops.
 -- The enums and FK references assume AppInstallation already exists.
 
 -- CreateEnum
-CREATE TYPE "ImportJobStatus" AS ENUM ('PENDING', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED');
+DO $$ BEGIN
+  CREATE TYPE "ImportJobStatus" AS ENUM ('PENDING', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- CreateEnum
-CREATE TYPE "ImportJobType" AS ENUM ('SET', 'BULK', 'BACKFILL');
+DO $$ BEGIN
+  CREATE TYPE "ImportJobType" AS ENUM ('SET', 'BULK', 'BACKFILL');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- CreateTable
-CREATE TABLE "ImportJob" (
+CREATE TABLE IF NOT EXISTS "ImportJob" (
     "id" TEXT NOT NULL,
     "installationId" TEXT NOT NULL,
     "type" "ImportJobType" NOT NULL,
@@ -35,7 +42,7 @@ CREATE TABLE "ImportJob" (
 );
 
 -- CreateTable
-CREATE TABLE "ImportedProduct" (
+CREATE TABLE IF NOT EXISTS "ImportedProduct" (
     "id" TEXT NOT NULL,
     "importJobId" TEXT NOT NULL,
     "scryfallId" TEXT NOT NULL,
@@ -54,7 +61,7 @@ CREATE TABLE "ImportedProduct" (
 );
 
 -- CreateTable
-CREATE TABLE "SetAudit" (
+CREATE TABLE IF NOT EXISTS "SetAudit" (
     "id" TEXT NOT NULL,
     "installationId" TEXT NOT NULL,
     "setCode" TEXT NOT NULL,
@@ -72,37 +79,52 @@ CREATE TABLE "SetAudit" (
 );
 
 -- CreateIndex
-CREATE INDEX "ImportJob_installationId_idx" ON "ImportJob"("installationId");
+CREATE INDEX IF NOT EXISTS "ImportJob_installationId_idx" ON "ImportJob"("installationId");
 
 -- CreateIndex
-CREATE INDEX "ImportJob_status_idx" ON "ImportJob"("status");
+CREATE INDEX IF NOT EXISTS "ImportJob_status_idx" ON "ImportJob"("status");
 
 -- CreateIndex
-CREATE INDEX "ImportJob_priority_status_idx" ON "ImportJob"("priority", "status");
+CREATE INDEX IF NOT EXISTS "ImportJob_priority_status_idx" ON "ImportJob"("priority", "status");
 
 -- CreateIndex
-CREATE INDEX "ImportedProduct_importJobId_idx" ON "ImportedProduct"("importJobId");
+CREATE INDEX IF NOT EXISTS "ImportedProduct_importJobId_idx" ON "ImportedProduct"("importJobId");
 
 -- CreateIndex
-CREATE INDEX "ImportedProduct_setCode_idx" ON "ImportedProduct"("setCode");
+CREATE INDEX IF NOT EXISTS "ImportedProduct_setCode_idx" ON "ImportedProduct"("setCode");
 
 -- CreateIndex
-CREATE INDEX "ImportedProduct_saleorProductId_idx" ON "ImportedProduct"("saleorProductId");
+CREATE INDEX IF NOT EXISTS "ImportedProduct_saleorProductId_idx" ON "ImportedProduct"("saleorProductId");
+
+-- CreateIndex (unique indexes need DO block for IF NOT EXISTS)
+DO $$ BEGIN
+  CREATE UNIQUE INDEX "ImportedProduct_scryfallId_setCode_key" ON "ImportedProduct"("scryfallId", "setCode");
+EXCEPTION WHEN duplicate_table THEN NULL;
+END $$;
 
 -- CreateIndex
-CREATE UNIQUE INDEX "ImportedProduct_scryfallId_setCode_key" ON "ImportedProduct"("scryfallId", "setCode");
+CREATE INDEX IF NOT EXISTS "SetAudit_installationId_idx" ON "SetAudit"("installationId");
 
 -- CreateIndex
-CREATE INDEX "SetAudit_installationId_idx" ON "SetAudit"("installationId");
+DO $$ BEGIN
+  CREATE UNIQUE INDEX "SetAudit_installationId_setCode_key" ON "SetAudit"("installationId", "setCode");
+EXCEPTION WHEN duplicate_table THEN NULL;
+END $$;
 
--- CreateIndex
-CREATE UNIQUE INDEX "SetAudit_installationId_setCode_key" ON "SetAudit"("installationId", "setCode");
+-- AddForeignKey (idempotent: check if constraint exists first)
+DO $$ BEGIN
+  ALTER TABLE "ImportJob" ADD CONSTRAINT "ImportJob_installationId_fkey" FOREIGN KEY ("installationId") REFERENCES "AppInstallation"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "ImportJob" ADD CONSTRAINT "ImportJob_installationId_fkey" FOREIGN KEY ("installationId") REFERENCES "AppInstallation"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "ImportedProduct" ADD CONSTRAINT "ImportedProduct_importJobId_fkey" FOREIGN KEY ("importJobId") REFERENCES "ImportJob"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "ImportedProduct" ADD CONSTRAINT "ImportedProduct_importJobId_fkey" FOREIGN KEY ("importJobId") REFERENCES "ImportJob"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "SetAudit" ADD CONSTRAINT "SetAudit_installationId_fkey" FOREIGN KEY ("installationId") REFERENCES "AppInstallation"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "SetAudit" ADD CONSTRAINT "SetAudit_installationId_fkey" FOREIGN KEY ("installationId") REFERENCES "AppInstallation"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;

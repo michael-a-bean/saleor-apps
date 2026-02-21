@@ -27,7 +27,7 @@ const handler = createManifestHandler({
       homepageUrl: "https://github.com/saleor/apps",
       id: env.MANIFEST_APP_ID,
       name: env.APP_NAME,
-      permissions: ["MANAGE_PRODUCTS"],
+      permissions: ["MANAGE_PRODUCTS", "MANAGE_PRODUCT_TYPES_AND_ATTRIBUTES"],
       requiredSaleorVersion: ">=3.21 <4",
       supportUrl: "https://saleor.io/discord",
       tokenTargetUrl: `${apiBaseUrl}/api/register`,

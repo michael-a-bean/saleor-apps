@@ -831,10 +831,11 @@ const systemRouter = router({
 
 		const result = await saleor.createMissingAttributes(missingDefs, productType.id);
 
-		return {
-			...result,
-			message: `Created ${result.created} attribute(s), assigned ${result.assigned} to product type`,
-		};
+		const message = result.errors.length > 0
+			? `Created ${result.created}, assigned ${result.assigned}. Errors: ${result.errors.join("; ")}`
+			: `Created ${result.created} attribute(s), assigned ${result.assigned} to product type`;
+
+		return { ...result, message };
 	}),
 });
 

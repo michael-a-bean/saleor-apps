@@ -16,6 +16,7 @@
     "./permissions": "./src/permissions.ts",
     "./race": "./src/race.ts",
     "./saleor-version-compatibility-validator": "./src/saleor-version-compatibility-validator.ts",
+    "./route-propagator": "./src/route-propagator.tsx",
     "./theme-synchronizer": "./src/theme-synchronizer.tsx",
     "./use-dashboard-notification": "./src/use-dashboard-notification.ts",
     "./encryptor": "./src/encryptor.ts"

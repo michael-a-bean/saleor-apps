@@ -13,7 +13,7 @@
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import type { ImportJobStatus, ImportJobType } from "@prisma/client";
+import type { ImportJobStatus, ImportJobType } from "@/generated/prisma";
 
 import { createLogger } from "@/lib/logger";
 import { env } from "@/lib/env";
@@ -885,7 +885,7 @@ const catalogRouter = router({
 });
 
 // Import PrismaClient and Client types
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@/generated/prisma";
 import type { Client } from "urql";
 
 export { jobsRouter, setsRouter, systemRouter, catalogRouter };

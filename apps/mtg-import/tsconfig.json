@@ -3,9 +3,15 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"],
-      "@/generated/*": ["generated/*"],
-      "@/package.json": ["package.json"]
+      "@/*": [
+        "./src/*"
+      ],
+      "@/generated/*": [
+        "generated/*"
+      ],
+      "@/package.json": [
+        "package.json"
+      ]
     },
     "plugins": [
       {
@@ -17,12 +23,16 @@
     "incremental": false
   },
   "include": [
-    "src/**/*.ts",
-    "src/**/*.tsx",
     "generated/**/*.ts",
     "graphql.config.ts",
     "next-env.d.ts",
-    "next.config.ts"
+    "next.config.ts",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    ".next/types/**/*.ts"
   ],
-  "exclude": ["node_modules", ".next"]
+  "exclude": [
+    "node_modules",
+    ".next"
+  ]
 }

@@ -16,8 +16,6 @@ COPY turbo.json ./
 # Copy all package.json files to preserve workspace structure
 COPY packages/ ./packages/
 COPY apps/mtg-import/ ./apps/mtg-import/
-# Copy inventory-ops prisma schema (shared database)
-COPY apps/inventory-ops/prisma/ ./apps/inventory-ops/prisma/
 
 # Install dependencies
 RUN pnpm install --frozen-lockfile

@@ -7,24 +7,30 @@
 
 import type { Client } from "urql";
 
-import { createLogger } from "@/lib/logger";
 import { SaleorApiError } from "@/lib/errors";
+import { createLogger } from "@/lib/logger";
+
+import type { AttributeDef } from "../import/attribute-map";
 import {
-  CHANNELS_QUERY,
-  PRODUCT_TYPES_QUERY,
+  ATTRIBUTE_BULK_CREATE_MUTATION,
+  type AttributeBulkCreateResult,
   CATEGORIES_QUERY,
-  WAREHOUSES_QUERY,
+  CHANNELS_QUERY,
+  PRODUCT_ATTRIBUTE_ASSIGN_MUTATION,
   PRODUCT_BULK_CREATE_MUTATION,
   PRODUCT_BULK_UPDATE_MUTATION,
   PRODUCT_BY_SLUG_QUERY,
-  PRODUCTS_BY_METADATA_QUERY,
-  type SaleorChannel,
-  type SaleorProductType,
-  type SaleorCategory,
-  type SaleorWarehouse,
+  PRODUCT_TYPES_QUERY,
+  type ProductAttributeAssignResult,
   type ProductBulkCreateResult,
   type ProductBulkUpdateResult,
+  PRODUCTS_BY_METADATA_QUERY,
+  type SaleorCategory,
+  type SaleorChannel,
+  type SaleorProductType,
   type SaleorProductWithAttributes,
+  type SaleorWarehouse,
+  WAREHOUSES_QUERY,
 } from "./graphql-operations";
 
 const logger = createLogger("SaleorImportClient");
@@ -238,5 +244,93 @@ export class SaleorImportClient {
 
     const edges = result.data?.products?.edges ?? [];
     return edges.map((e: { node: SaleorProductWithAttributes }) => e.node);
+  }
+
+  /** Create missing attributes and assign them to the product type */
+  async createMissingAttributes(
+    missingDefs: AttributeDef[],
+    productTypeId: string
+  ): Promise<{ created: number; assigned: number; errors: string[] }> {
+    const errors: string[] = [];
+
+    // Step 1: Bulk-create the missing attributes
+    const createInputs = missingDefs.map((def) => ({
+      name: def.name,
+      slug: def.slug,
+      type: "PRODUCT_TYPE" as const,
+      inputType: def.inputType,
+    }));
+
+    const createResult = await this.client
+      .mutation(ATTRIBUTE_BULK_CREATE_MUTATION, { attributes: createInputs })
+      .toPromise();
+
+    if (createResult.error) {
+      throw new SaleorApiError(`attributeBulkCreate failed: ${createResult.error.message}`);
+    }
+
+    const createData = createResult.data?.attributeBulkCreate as AttributeBulkCreateResult | undefined;
+    if (!createData) {
+      throw new SaleorApiError("attributeBulkCreate returned no data");
+    }
+
+    // Collect successfully created attribute IDs
+    const createdIds: string[] = [];
+    for (const row of createData.results) {
+      if (row.attribute) {
+        createdIds.push(row.attribute.id);
+      }
+      if (row.errors && row.errors.length > 0) {
+        for (const err of row.errors) {
+          errors.push(`Create ${err.field ?? "attribute"}: ${err.message ?? err.code}`);
+        }
+      }
+    }
+
+    // Also log top-level errors
+    for (const err of createData.errors) {
+      errors.push(`Bulk create: ${err.message ?? err.code}`);
+    }
+
+    logger.info("Attributes created", { count: createdIds.length, errors: errors.length });
+
+    if (createdIds.length === 0) {
+      return { created: 0, assigned: 0, errors };
+    }
+
+    // Step 2: Assign created attributes to the product type
+    const assignOps = createdIds.map((id) => ({
+      id,
+      type: "PRODUCT" as const,
+    }));
+
+    const assignResult = await this.client
+      .mutation(PRODUCT_ATTRIBUTE_ASSIGN_MUTATION, {
+        productTypeId,
+        operations: assignOps,
+      })
+      .toPromise();
+
+    if (assignResult.error) {
+      throw new SaleorApiError(`productAttributeAssign failed: ${assignResult.error.message}`);
+    }
+
+    const assignData = assignResult.data?.productAttributeAssign as ProductAttributeAssignResult | undefined;
+    if (!assignData) {
+      throw new SaleorApiError("productAttributeAssign returned no data");
+    }
+
+    for (const err of assignData.errors) {
+      errors.push(`Assign: ${err.message ?? err.code}`);
+    }
+
+    const assignedCount = assignData.errors.length === 0 ? createdIds.length : 0;
+
+    logger.info("Attributes assigned to product type", {
+      productTypeId,
+      assigned: assignedCount,
+    });
+
+    return { created: createdIds.length, assigned: assignedCount, errors };
   }
 }

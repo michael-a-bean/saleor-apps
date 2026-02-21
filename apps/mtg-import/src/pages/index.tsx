@@ -1,7 +1,7 @@
 import { useAppBridge } from "@saleor/app-sdk/app-bridge";
 import { useDashboardNotification } from "@saleor/apps-shared/use-dashboard-notification";
 import { Layout } from "@saleor/apps-ui";
-import { Box, Button, Text, Tooltip } from "@saleor/macaw-ui";
+import { Box, Button, Text } from "@saleor/macaw-ui";
 import { NextPage } from "next";
 import { useRouter } from "next/router";
 
@@ -10,9 +10,9 @@ import type { ImportJob } from "@/types/import-types";
 import { DataTable, InlineSpinner, ProgressBar, StatBox, StatusBadge } from "@/ui/components";
 
 const STATUS_ICON: Record<string, string> = {
-  pass: "✓",
-  fail: "✗",
-  warn: "⚠",
+  pass: "\u2713",
+  fail: "\u2717",
+  warn: "\u26A0",
 };
 
 const STATUS_COLOR: Record<string, string> = {
@@ -24,6 +24,7 @@ const STATUS_COLOR: Record<string, string> = {
 const IndexPage: NextPage = () => {
   const { appBridgeState } = useAppBridge();
   const router = useRouter();
+  const { notifySuccess, notifyError } = useDashboardNotification();
 
   const readiness = trpcClient.system.readiness.useQuery(undefined, {
     enabled: !!appBridgeState?.ready,
@@ -32,6 +33,26 @@ const IndexPage: NextPage = () => {
   const catalog = trpcClient.catalog.summary.useQuery(undefined, {
     enabled: !!appBridgeState?.ready,
   });
+
+  const setupAttributes = trpcClient.system.setupAttributes.useMutation({
+    onSuccess: (data) => {
+      notifySuccess("Attributes created", data.message);
+      readiness.refetch();
+    },
+    onError: (error) => {
+      notifyError("Failed to create attributes", error.message);
+    },
+  });
+
+  const attributeCheckFailed =
+    readiness.data?.checks.some(
+      (check) => check.name === "attributes" && check.status === "fail"
+    ) ?? false;
+
+  const productTypeExists =
+    readiness.data?.checks.some(
+      (check) => check.name === "product-type" && check.status === "pass"
+    ) ?? false;
 
   return (
     <Box>
@@ -104,10 +125,23 @@ const IndexPage: NextPage = () => {
               </Box>
 
               {!readiness.data.ready && (
-                <Box marginTop={4}>
+                <Box display="flex" gap={3} marginTop={4}>
                   <Button variant="secondary" onClick={() => readiness.refetch()}>
                     Re-check
                   </Button>
+                  {attributeCheckFailed && productTypeExists && (
+                    <Button
+                      variant="primary"
+                      onClick={() => setupAttributes.mutate()}
+                      disabled={setupAttributes.isLoading}
+                    >
+                      {setupAttributes.isLoading ? (
+                        <InlineSpinner label="Creating attributes..." />
+                      ) : (
+                        "Create Missing Attributes"
+                      )}
+                    </Button>
+                  )}
                 </Box>
               )}
             </Box>

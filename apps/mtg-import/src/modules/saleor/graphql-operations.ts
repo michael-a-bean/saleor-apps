@@ -173,6 +173,58 @@ export const PRODUCT_BULK_UPDATE_MUTATION = gql`
   }
 `;
 
+export const ATTRIBUTE_BULK_CREATE_MUTATION = gql`
+  mutation AttributeBulkCreate($attributes: [AttributeCreateInput!]!) {
+    attributeBulkCreate(attributes: $attributes, errorPolicy: REJECT_FAILED_ROWS) {
+      count
+      results {
+        attribute {
+          id
+          slug
+          name
+          inputType
+        }
+        errors {
+          field
+          message
+          code
+        }
+      }
+      errors {
+        field
+        message
+        code
+      }
+    }
+  }
+`;
+
+export const PRODUCT_ATTRIBUTE_ASSIGN_MUTATION = gql`
+  mutation ProductAttributeAssign(
+    $productTypeId: ID!
+    $operations: [ProductAttributeAssignInput!]!
+  ) {
+    productAttributeAssign(
+      productTypeId: $productTypeId
+      operations: $operations
+    ) {
+      productType {
+        id
+        slug
+        productAttributes {
+          id
+          slug
+        }
+      }
+      errors {
+        field
+        message
+        code
+      }
+    }
+  }
+`;
+
 // --- Types ---
 
 export interface SaleorChannel {
@@ -248,6 +300,44 @@ export interface ProductBulkUpdateResult {
       code: string;
       path: string | null;
     }>;
+  }>;
+}
+
+export interface AttributeBulkCreateResult {
+  count: number;
+  results: Array<{
+    attribute: {
+      id: string;
+      slug: string;
+      name: string;
+      inputType: string;
+    } | null;
+    errors: Array<{
+      field: string | null;
+      message: string | null;
+      code: string;
+    }>;
+  }>;
+  errors: Array<{
+    field: string | null;
+    message: string | null;
+    code: string;
+  }>;
+}
+
+export interface ProductAttributeAssignResult {
+  productType: {
+    id: string;
+    slug: string;
+    productAttributes: Array<{
+      id: string;
+      slug: string;
+    }>;
+  } | null;
+  errors: Array<{
+    field: string | null;
+    message: string | null;
+    code: string;
   }>;
 }
 

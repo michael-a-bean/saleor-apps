@@ -793,6 +793,49 @@ const systemRouter = router({
 		const allPass = checks.every((c) => c.status !== "fail");
 		return { ready: allPass, checks };
 	}),
+
+	/** Create missing attributes and assign them to the mtg-card product type */
+	setupAttributes: protectedClientProcedure.mutation(async ({ ctx }) => {
+		const saleor = new SaleorImportClient(ctx.apiClient!);
+
+		// Require the product type to exist first
+		let productType;
+		try {
+			productType = await saleor.getProductType();
+		} catch {
+			throw new TRPCError({
+				code: "PRECONDITION_FAILED",
+				message: 'Product type "mtg-card" must exist before creating attributes.',
+			});
+		}
+
+		// Find missing attribute slugs
+		const existingSlugs = new Set(
+			productType.productAttributes.map((a) => a.slug),
+		);
+		const missingDefs = ATTRIBUTE_DEFS.filter((d) => !existingSlugs.has(d.slug));
+
+		if (missingDefs.length === 0) {
+			return {
+				created: 0,
+				assigned: 0,
+				errors: [] as string[],
+				message: "All attributes already exist",
+			};
+		}
+
+		logger.info("Creating missing attributes", {
+			count: missingDefs.length,
+			slugs: missingDefs.map((d) => d.slug),
+		});
+
+		const result = await saleor.createMissingAttributes(missingDefs, productType.id);
+
+		return {
+			...result,
+			message: `Created ${result.created} attribute(s), assigned ${result.assigned} to product type`,
+		};
+	}),
 });
 
 // --- Background job processing ---

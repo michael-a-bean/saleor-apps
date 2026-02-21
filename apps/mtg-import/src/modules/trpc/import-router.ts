@@ -116,11 +116,11 @@ const jobsRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      // Validate: SET and BACKFILL types require setCode
-      if ((input.type === "SET" || input.type === "BACKFILL") && !input.setCode) {
+      // Validate: SET type requires setCode; BACKFILL is optional (omit = full scan)
+      if (input.type === "SET" && !input.setCode) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: `setCode is required for ${input.type} import type`,
+          message: "setCode is required for SET import type",
         });
       }
 

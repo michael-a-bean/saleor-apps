@@ -64,7 +64,7 @@ const NewImportPage: NextPage = () => {
   const doSubmit = () => {
     createMutation.mutate({
       type: importType,
-      setCode: importType === "SET" || importType === "BACKFILL" ? setCode.toLowerCase() : undefined,
+      setCode: importType === "SET" ? setCode.toLowerCase() : undefined,
       priority,
     });
   };

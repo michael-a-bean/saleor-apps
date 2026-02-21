@@ -28,13 +28,13 @@ export const PRODUCT_TYPES_QUERY = gql`
           id
           name
           slug
-          productAttributes(first: 100) {
+          productAttributes {
             id
             name
             slug
             inputType
           }
-          variantAttributes(first: 100) {
+          variantAttributes {
             id
             name
             slug

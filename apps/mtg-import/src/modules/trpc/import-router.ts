@@ -715,12 +715,12 @@ const systemRouter = router({
 				status: "pass",
 				message: `Product type "${productType.slug}" found`,
 			});
-		} catch {
+		} catch (err) {
 			checks.push({
 				name: "product-type",
 				status: "fail",
 				message: 'Product type "mtg-card" not found',
-				detail: "Create a product type named 'mtg-card' in Saleor Dashboard → Configuration → Product Types",
+				detail: err instanceof Error ? err.message : "Create a product type named 'mtg-card' in Saleor Dashboard → Configuration → Product Types",
 			});
 		}
 

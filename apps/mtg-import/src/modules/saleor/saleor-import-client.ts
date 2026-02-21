@@ -282,7 +282,7 @@ export class SaleorImportClient {
       }
       if (row.errors && row.errors.length > 0) {
         for (const err of row.errors) {
-          errors.push(`Create ${err.field ?? "attribute"}: ${err.message ?? err.code}`);
+          errors.push(`Create ${err.path ?? "attribute"}: ${err.message ?? err.code}`);
         }
       }
     }

@@ -185,13 +185,13 @@ export const ATTRIBUTE_BULK_CREATE_MUTATION = gql`
           inputType
         }
         errors {
-          field
+          path
           message
           code
         }
       }
       errors {
-        field
+        path
         message
         code
       }
@@ -313,13 +313,13 @@ export interface AttributeBulkCreateResult {
       inputType: string;
     } | null;
     errors: Array<{
-      field: string | null;
+      path: string | null;
       message: string | null;
       code: string;
     }>;
   }>;
   errors: Array<{
-    field: string | null;
+    path: string | null;
     message: string | null;
     code: string;
   }>;

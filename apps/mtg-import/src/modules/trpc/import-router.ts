@@ -141,10 +141,18 @@ const jobsRouter = router({
         });
       }
 
-      // Pre-flight validation: ensure Saleor is configured
+      // Pre-flight validation: ensure Saleor is configured with current settings
+      const settings = await ctx.prisma.importSettings.findUnique({
+        where: { installationId: ctx.installationId },
+      });
       const saleor = new SaleorImportClient(ctx.apiClient!);
       try {
-        await saleor.resolveImportContext();
+        await saleor.resolveImportContext(
+          settings?.channelSlugs ?? ["webstore", "singles-builder"],
+          settings?.productTypeSlug ?? "mtg-card",
+          settings?.categorySlug ?? "mtg-singles",
+          settings?.warehouseSlugs ?? [],
+        );
       } catch (err) {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
@@ -328,15 +336,21 @@ const jobsRouter = router({
 // --- Sets Router ---
 
 const setsRouter = router({
-  /** List available sets from Scryfall */
-  list: protectedClientProcedure.query(async () => {
+  /** List available sets from Scryfall (filtered by configured set types) */
+  list: protectedClientProcedure.query(async ({ ctx }) => {
+    const defaultSetTypes = ["core", "expansion", "masters", "draft_innovation", "commander", "starter", "funny"];
+
+    // Load importable set types from settings (if configured)
+    const settings = await ctx.prisma.importSettings.findUnique({
+      where: { installationId: ctx.installationId },
+      select: { importableSetTypes: true },
+    });
+    const setTypes = settings?.importableSetTypes?.length ? settings.importableSetTypes : defaultSetTypes;
+
     const sets = await getScryfallClient().listSets();
-    // Filter to relevant set types and sort by release date
     const importable = sets
       .filter((s) => !s.digital)
-      .filter((s) =>
-        ["core", "expansion", "masters", "draft_innovation", "commander", "starter", "funny"].includes(s.set_type)
-      )
+      .filter((s) => setTypes.includes(s.set_type))
       .sort((a, b) => {
         const dateA = a.released_at ?? "";
         const dateB = b.released_at ?? "";

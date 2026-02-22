@@ -214,6 +214,87 @@ export const ATTRIBUTE_BULK_CREATE_MUTATION = gql`
   }
 `;
 
+export const CHANNEL_CREATE_MUTATION = gql`
+  mutation ChannelCreate($input: ChannelCreateInput!) {
+    channelCreate(input: $input) {
+      channel {
+        id
+        name
+        slug
+        currencyCode
+      }
+      errors {
+        field
+        message
+        code
+      }
+    }
+  }
+`;
+
+export const PRODUCT_TYPE_CREATE_MUTATION = gql`
+  mutation ProductTypeCreate($input: ProductTypeCreateInput!) {
+    productTypeCreate(input: $input) {
+      productType {
+        id
+        name
+        slug
+        productAttributes {
+          id
+          name
+          slug
+          inputType
+        }
+        variantAttributes {
+          id
+          name
+          slug
+          inputType
+        }
+      }
+      errors {
+        field
+        message
+        code
+      }
+    }
+  }
+`;
+
+export const CATEGORY_CREATE_MUTATION = gql`
+  mutation CategoryCreate($input: CategoryInput!) {
+    categoryCreate(input: $input) {
+      category {
+        id
+        name
+        slug
+      }
+      errors {
+        field
+        message
+        code
+      }
+    }
+  }
+`;
+
+export const WAREHOUSE_CREATE_MUTATION = gql`
+  mutation WarehouseCreate($input: WarehouseCreateInput!) {
+    warehouseCreate(input: $input) {
+      warehouse {
+        id
+        name
+        slug
+      }
+      errors {
+        field
+        message
+        code
+      }
+    }
+  }
+`;
+
 export const PRODUCT_ATTRIBUTE_ASSIGN_MUTATION = gql`
   mutation ProductAttributeAssign(
     $productTypeId: ID!

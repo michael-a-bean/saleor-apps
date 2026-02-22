@@ -20,8 +20,9 @@ model AppInstallation {
   appId        String
   installedAt  DateTime @default(now())
 
-  importJobs ImportJob[]
-  setAudits  SetAudit[]
+  importJobs     ImportJob[]
+  setAudits      SetAudit[]
+  importSettings ImportSettings?
 
   @@unique([saleorApiUrl, appId])
   @@index([saleorApiUrl])
@@ -140,4 +141,37 @@ model SetAudit {
 
   @@unique([installationId, setCode])
   @@index([installationId])
+}
+
+// Per-installation import configuration
+model ImportSettings {
+  id             String          @id @default(uuid())
+  installationId String          @unique
+  installation   AppInstallation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+
+  // Saleor targets (channels + warehouses are multi-select)
+  channelSlugs    String[] @default(["webstore", "singles-builder"])
+  productTypeSlug String   @default("mtg-card")
+  categorySlug    String   @default("mtg-singles")
+  warehouseSlugs  String[] @default([])
+
+  // Pricing — condition multipliers (NM = base, others discounted)
+  conditionNm    Float @default(1.0)
+  conditionLp    Float @default(0.9)
+  conditionMp    Float @default(0.75)
+  conditionHp    Float @default(0.5)
+  conditionDmg   Float @default(0.25)
+  defaultPrice   Float @default(0.25)
+  costPriceRatio Float @default(0.5)
+
+  // Product defaults
+  isPublished            Boolean @default(true)
+  visibleInListings      Boolean @default(true)
+  isAvailableForPurchase Boolean @default(true)
+  trackInventory         Boolean @default(false)
+
+  // Import behavior
+  importableSetTypes String[] @default(["core", "expansion", "masters", "draft_innovation", "commander", "starter", "funny"])
+
+  updatedAt DateTime @updatedAt
 }

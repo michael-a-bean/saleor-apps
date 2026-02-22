@@ -1,5 +1,6 @@
 import { protectedClientProcedure } from "./protected-client-procedure";
 import { jobsRouter, setsRouter, systemRouter, catalogRouter } from "./import-router";
+import { settingsRouter } from "./settings-router";
 import { router } from "./trpc-server";
 
 const healthRouter = router({
@@ -18,6 +19,7 @@ export const trpcRouter = router({
   sets: setsRouter,
   system: systemRouter,
   catalog: catalogRouter,
+  settings: settingsRouter,
 });
 
 export type TrpcRouter = typeof trpcRouter;

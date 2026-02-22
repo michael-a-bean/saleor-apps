@@ -36,6 +36,7 @@ export const AppLayout = ({ children }: AppLayoutProps) => {
     { href: "/", label: "Dashboard" },
     { href: "/import", label: "Import Jobs" },
     { href: "/sets", label: "Sets" },
+    { href: "/settings", label: "Settings" },
   ];
 
   return (

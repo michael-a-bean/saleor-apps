@@ -92,6 +92,7 @@ const mockContext = {
   },
   category: { id: "cat-1", name: "MTG Singles", slug: "mtg-singles" },
   warehouse: { id: "wh-1", name: "Warehouse", slug: "main" },
+  warehouses: [{ id: "wh-1", name: "Warehouse", slug: "main" }],
 };
 
 function makeBulkCreateResult(count: number) {

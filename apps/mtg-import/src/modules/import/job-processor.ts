@@ -18,7 +18,7 @@ import { ScryfallClient, BulkDataManager, retailPaperFilter } from "../scryfall"
 import { MtgjsonBulkDataManager } from "../mtgjson";
 import { SaleorImportClient } from "../saleor";
 import { buildAttributeIdMap } from "./attribute-map";
-import { cardToProductInput, batchCards, type PipelineOptions } from "./pipeline";
+import { cardToProductInput, batchCards, type PipelineOptions, DEFAULT_CONDITION_MULTIPLIERS } from "./pipeline";
 
 const logger = createLogger("JobProcessor");
 
@@ -81,9 +81,39 @@ export class JobProcessor {
         data: { status: "RUNNING", startedAt: new Date() },
       });
 
-      // Resolve Saleor context
-      const importContext = await this.saleor.resolveImportContext();
+      // Load settings (if configured) — fall back to defaults
+      const settings = await this.prisma.importSettings.findUnique({
+        where: { installationId: job.installationId },
+      });
+
+      // Resolve Saleor context with settings
+      const importContext = await this.saleor.resolveImportContext(
+        settings?.channelSlugs ?? ["webstore", "singles-builder"],
+        settings?.productTypeSlug ?? "mtg-card",
+        settings?.categorySlug ?? "mtg-singles",
+        settings?.warehouseSlugs ?? [],
+      );
       const attributeIdMap = buildAttributeIdMap(importContext.productType.productAttributes);
+
+      // Build pipeline options from settings
+      const pipelineOptions: PipelineOptions = {
+        batchSize: this.batchSize,
+        defaultPrice: settings?.defaultPrice ?? 0.25,
+        costPriceRatio: settings?.costPriceRatio ?? 0.5,
+        conditionMultipliers: settings
+          ? {
+              NM: settings.conditionNm,
+              LP: settings.conditionLp,
+              MP: settings.conditionMp,
+              HP: settings.conditionHp,
+              DMG: settings.conditionDmg,
+            }
+          : DEFAULT_CONDITION_MULTIPLIERS,
+        isPublished: settings?.isPublished ?? true,
+        visibleInListings: settings?.visibleInListings ?? true,
+        isAvailableForPurchase: settings?.isAvailableForPurchase ?? true,
+        trackInventory: settings?.trackInventory ?? false,
+      };
 
       logger.info("Starting import job", {
         jobId: job.id,
@@ -121,12 +151,13 @@ export class JobProcessor {
         batch.push(card);
 
         if (batch.length >= this.batchSize) {
-          const batchResult = await this.processBatch(
+          await this.processBatch(
             batch,
             job,
             importContext,
             attributeIdMap,
-            result
+            result,
+            pipelineOptions
           );
           batch = [];
 
@@ -139,7 +170,7 @@ export class JobProcessor {
 
       // Process remaining cards
       if (batch.length > 0) {
-        await this.processBatch(batch, job, importContext, attributeIdMap, result);
+        await this.processBatch(batch, job, importContext, attributeIdMap, result, pipelineOptions);
       }
 
       // Mark job complete
@@ -312,11 +343,10 @@ export class JobProcessor {
     job: ImportJob,
     importContext: Awaited<ReturnType<SaleorImportClient["resolveImportContext"]>>,
     attributeIdMap: Map<string, string>,
-    result: ProcessResult
+    result: ProcessResult,
+    pipelineOptions: PipelineOptions = {}
   ): Promise<void> {
     try {
-      const pipelineOptions: PipelineOptions = { batchSize: this.batchSize };
-
       // Convert cards to product inputs
       const productInputs = cards.map((card) =>
         cardToProductInput(card, importContext, attributeIdMap, pipelineOptions)

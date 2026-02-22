@@ -16,8 +16,8 @@ import { buildProductAttributes, buildAttributeIdMap } from "./attribute-map";
 
 const logger = createLogger("ImportPipeline");
 
-/** Condition multipliers for price calculation (NM = base, others discounted) */
-const CONDITION_MULTIPLIERS: Record<ConditionCode, number> = {
+/** Default condition multipliers for price calculation (NM = base, others discounted) */
+export const DEFAULT_CONDITION_MULTIPLIERS: Record<ConditionCode, number> = {
   NM: 1.0,
   LP: 0.9,
   MP: 0.75,
@@ -40,6 +40,18 @@ export interface PipelineOptions {
   batchSize?: number;
   /** Default price when Scryfall has no price data (default: 0.25) */
   defaultPrice?: number;
+  /** Condition multipliers for price calculation */
+  conditionMultipliers?: Record<ConditionCode, number>;
+  /** Cost price ratio (default: 0.5) */
+  costPriceRatio?: number;
+  /** Whether to publish products in channels (default: true) */
+  isPublished?: boolean;
+  /** Whether products are visible in listings (default: true) */
+  visibleInListings?: boolean;
+  /** Whether products are available for purchase (default: true) */
+  isAvailableForPurchase?: boolean;
+  /** Whether to track inventory (default: false) */
+  trackInventory?: boolean;
 }
 
 /** A single product input ready for productBulkCreate */
@@ -77,13 +89,13 @@ export function cardToProductInput(
   // Channel listings at product level (visibility)
   const channelListings = context.channels.map((ch) => ({
     channelId: ch.id,
-    isPublished: true,
-    visibleInListings: true,
-    isAvailableForPurchase: true,
+    isPublished: options.isPublished ?? true,
+    visibleInListings: options.visibleInListings ?? true,
+    isAvailableForPurchase: options.isAvailableForPurchase ?? true,
   }));
 
   // Variants: conditions × finishes
-  const variants = buildVariants(card, context, defaultPrice);
+  const variants = buildVariants(card, context, defaultPrice, options);
 
   return {
     name: card.name.substring(0, 250),
@@ -110,9 +122,14 @@ export function cardToProductInput(
 function buildVariants(
   card: ScryfallCard,
   context: ImportContext,
-  defaultPrice: number
+  defaultPrice: number,
+  options: PipelineOptions = {}
 ): Array<Record<string, unknown>> {
   const variants: Array<Record<string, unknown>> = [];
+  const multipliers = options.conditionMultipliers ?? DEFAULT_CONDITION_MULTIPLIERS;
+  const costRatio = options.costPriceRatio ?? 0.5;
+  const trackInventory = options.trackInventory ?? false;
+  const warehouses = context.warehouses ?? [context.warehouse];
 
   for (const scryfallFinish of card.finishes) {
     const finishCode = FINISH_MAP[scryfallFinish];
@@ -121,7 +138,7 @@ function buildVariants(
     const basePrice = rawPrice ? parseFloat(rawPrice) : defaultPrice;
 
     for (const condition of CONDITIONS) {
-      const multiplier = CONDITION_MULTIPLIERS[condition];
+      const multiplier = multipliers[condition] ?? DEFAULT_CONDITION_MULTIPLIERS[condition];
       const price = roundPrice(basePrice * multiplier);
       const sku = generateSku(card.id, condition, finishCode);
       const variantName = formatVariantName(condition, finishCode);
@@ -129,13 +146,13 @@ function buildVariants(
       variants.push({
         sku,
         name: variantName,
-        trackInventory: false,
+        trackInventory,
         attributes: [],
-        channelListings: buildVariantChannelListings(context.channels, price),
-        stocks: [{
-          warehouse: context.warehouse.id,
+        channelListings: buildVariantChannelListings(context.channels, price, costRatio),
+        stocks: warehouses.map((wh) => ({
+          warehouse: wh.id,
           quantity: 0,
-        }],
+        })),
       });
     }
   }
@@ -150,12 +167,13 @@ function buildVariants(
  */
 function buildVariantChannelListings(
   channels: SaleorChannel[],
-  price: number
+  price: number,
+  costRatio: number = 0.5
 ): Array<Record<string, unknown>> {
   return channels.map((ch) => ({
     channelId: ch.id,
     price: String(price),
-    costPrice: String(roundPrice(price * 0.5)),
+    costPrice: String(roundPrice(price * costRatio)),
   }));
 }
 

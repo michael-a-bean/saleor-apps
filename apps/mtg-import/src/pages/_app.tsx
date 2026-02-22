@@ -41,6 +41,7 @@ function NextApp({ Component, pageProps }: AppProps) {
             "/import/new",
             "/import/[id]",
             "/sets",
+            "/settings",
           ]}
           fallback={<IframeProtectedFallback appName="MTG Import" />}
         >

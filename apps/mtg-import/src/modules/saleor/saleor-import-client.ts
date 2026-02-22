@@ -40,7 +40,10 @@ export interface ImportContext {
   channels: SaleorChannel[];
   productType: SaleorProductType;
   category: SaleorCategory;
+  /** Primary warehouse (first from list, used for stock entries) */
   warehouse: SaleorWarehouse;
+  /** All selected warehouses */
+  warehouses: SaleorWarehouse[];
 }
 
 export class SaleorImportClient {
@@ -118,8 +121,8 @@ export class SaleorImportClient {
     return match.node;
   }
 
-  /** Get the first warehouse (for stock entries) */
-  async getWarehouse(): Promise<SaleorWarehouse> {
+  /** Get all warehouses */
+  async getWarehouses(): Promise<SaleorWarehouse[]> {
     const result = await this.client.query(WAREHOUSES_QUERY, {}).toPromise();
 
     if (result.error) {
@@ -127,30 +130,60 @@ export class SaleorImportClient {
     }
 
     const warehouses = result.data?.warehouses?.edges ?? [];
-    if (warehouses.length === 0) {
-      throw new SaleorApiError("No warehouses found. Create one in Saleor Dashboard first.");
-    }
-
-    return warehouses[0].node;
+    return warehouses.map((e: { node: SaleorWarehouse }) => e.node);
   }
 
-  /** Resolve the full import context (channels, product type, category, warehouse) */
-  async resolveImportContext(channelSlugs: string[] = ["webstore", "singles-builder"]): Promise<ImportContext> {
-    const [channels, productType, category, warehouse] = await Promise.all([
+  /** Get the first warehouse (for stock entries) */
+  async getWarehouse(): Promise<SaleorWarehouse> {
+    const all = await this.getWarehouses();
+    if (all.length === 0) {
+      throw new SaleorApiError("No warehouses found. Create one in Saleor Dashboard first.");
+    }
+    return all[0];
+  }
+
+  /** Get warehouses by slug list. Empty array = first warehouse (legacy behavior). */
+  async getWarehousesBySlugs(slugs: string[]): Promise<SaleorWarehouse[]> {
+    const all = await this.getWarehouses();
+    if (slugs.length === 0) {
+      if (all.length === 0) {
+        throw new SaleorApiError("No warehouses found. Create one in Saleor Dashboard first.");
+      }
+      return [all[0]];
+    }
+    const found = all.filter((wh) => slugs.includes(wh.slug));
+    const missing = slugs.filter((s) => !found.some((wh) => wh.slug === s));
+    if (missing.length > 0) {
+      logger.warn("Some warehouses not found", { missing, available: all.map((wh) => wh.slug) });
+    }
+    if (found.length === 0) {
+      throw new SaleorApiError(`None of the configured warehouses found: ${slugs.join(", ")}`);
+    }
+    return found;
+  }
+
+  /** Resolve the full import context (channels, product type, category, warehouses) */
+  async resolveImportContext(
+    channelSlugs: string[] = ["webstore", "singles-builder"],
+    productTypeSlug: string = "mtg-card",
+    categorySlug: string = "mtg-singles",
+    warehouseSlugs: string[] = [],
+  ): Promise<ImportContext> {
+    const [channels, productType, category, warehouses] = await Promise.all([
       this.getChannelsBySlugs(channelSlugs),
-      this.getProductType(),
-      this.getCategory(),
-      this.getWarehouse(),
+      this.getProductType(productTypeSlug),
+      this.getCategory(categorySlug),
+      this.getWarehousesBySlugs(warehouseSlugs),
     ]);
 
     logger.info("Import context resolved", {
       channels: channels.map((ch) => ch.slug),
       productType: productType.slug,
       category: category.slug,
-      warehouse: warehouse.slug,
+      warehouses: warehouses.map((wh) => wh.slug),
     });
 
-    return { channels, productType, category, warehouse };
+    return { channels, productType, category, warehouse: warehouses[0], warehouses };
   }
 
   /** Check if a product already exists by slug */

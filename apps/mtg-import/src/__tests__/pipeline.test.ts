@@ -82,6 +82,7 @@ const mockContext: ImportContext = {
   },
   category: { id: "cat-1", name: "MTG Singles", slug: "mtg-singles" },
   warehouse: { id: "wh-1", name: "Main Warehouse", slug: "main-warehouse" },
+  warehouses: [{ id: "wh-1", name: "Main Warehouse", slug: "main-warehouse" }],
 };
 
 describe("cardToProductInput", () => {

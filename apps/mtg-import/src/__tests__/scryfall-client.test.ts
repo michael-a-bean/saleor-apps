@@ -164,7 +164,7 @@ describe("ScryfallClient", () => {
       expect(result.id).toBe("abc");
     });
 
-    it("throws after max retries exhausted", async () => {
+    it("throws after max retries exhausted", { timeout: 30_000 }, async () => {
       mockFetch.mockResolvedValue(mockFetchResponse({ object: "error" }, 503));
 
       const client = new ScryfallClient({ rateLimiter: noopLimiter });

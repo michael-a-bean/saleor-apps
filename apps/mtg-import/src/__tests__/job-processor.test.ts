@@ -173,6 +173,9 @@ function createMocks(cards: ScryfallCard[] = []) {
     setAudit: {
       upsert: vi.fn().mockResolvedValue({}),
     },
+    importSettings: {
+      findUnique: vi.fn().mockResolvedValue(null),
+    },
   };
 
   const mockGqlClient = {};

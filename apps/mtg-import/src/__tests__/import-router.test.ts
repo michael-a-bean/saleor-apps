@@ -112,6 +112,9 @@ function createMockContext(overrides: Record<string, any> = {}) {
       setAudit: {
         findMany: vi.fn().mockResolvedValue([]),
       },
+      importSettings: {
+        findUnique: vi.fn().mockResolvedValue(null),
+      },
     },
     ...overrides,
   };

@@ -94,8 +94,11 @@ export function cardToProductInput(
     isAvailableForPurchase: options.isAvailableForPurchase ?? true,
   }));
 
+  // Variant attribute map (mtg-condition, mtg-finish if configured on product type)
+  const variantAttributeIdMap = buildAttributeIdMap(context.productType.variantAttributes);
+
   // Variants: conditions × finishes
-  const variants = buildVariants(card, context, defaultPrice, options);
+  const variants = buildVariants(card, context, defaultPrice, options, variantAttributeIdMap);
 
   return {
     name: card.name.substring(0, 250),
@@ -123,13 +126,18 @@ function buildVariants(
   card: ScryfallCard,
   context: ImportContext,
   defaultPrice: number,
-  options: PipelineOptions = {}
+  options: PipelineOptions = {},
+  variantAttributeIdMap: Map<string, string> = new Map()
 ): Array<Record<string, unknown>> {
   const variants: Array<Record<string, unknown>> = [];
   const multipliers = options.conditionMultipliers ?? DEFAULT_CONDITION_MULTIPLIERS;
   const costRatio = options.costPriceRatio ?? 0.5;
   const trackInventory = options.trackInventory ?? false;
   const warehouses = context.warehouses ?? [context.warehouse];
+
+  // Look up variant attribute IDs for condition/finish (if configured on product type)
+  const conditionAttrId = variantAttributeIdMap.get("mtg-condition");
+  const finishAttrId = variantAttributeIdMap.get("mtg-finish");
 
   for (const scryfallFinish of card.finishes) {
     const finishCode = FINISH_MAP[scryfallFinish];
@@ -143,11 +151,20 @@ function buildVariants(
       const sku = generateSku(card.id, condition, finishCode);
       const variantName = formatVariantName(condition, finishCode);
 
+      // Build variant attributes (condition + finish) if attribute IDs are available
+      const variantAttrs: Array<Record<string, unknown>> = [];
+      if (conditionAttrId) {
+        variantAttrs.push({ id: conditionAttrId, dropdown: { value: CONDITION_NAMES[condition] } });
+      }
+      if (finishAttrId) {
+        variantAttrs.push({ id: finishAttrId, dropdown: { value: FINISH_NAMES[finishCode] } });
+      }
+
       variants.push({
         sku,
         name: variantName,
         trackInventory,
-        attributes: [],
+        attributes: variantAttrs,
         channelListings: buildVariantChannelListings(context.channels, price, costRatio),
         stocks: warehouses.map((wh) => ({
           warehouse: wh.id,
@@ -237,21 +254,25 @@ function buildMedia(card: ScryfallCard): Array<Record<string, unknown>> {
   }];
 }
 
+/** Condition code → full display name */
+const CONDITION_NAMES: Record<ConditionCode, string> = {
+  NM: "Near Mint",
+  LP: "Lightly Played",
+  MP: "Moderately Played",
+  HP: "Heavily Played",
+  DMG: "Damaged",
+};
+
+/** Finish code → full display name */
+const FINISH_NAMES: Record<FinishCode, string> = {
+  NF: "Non-Foil",
+  F: "Foil",
+  E: "Etched",
+};
+
 /** Format variant display name */
 function formatVariantName(condition: ConditionCode, finish: FinishCode): string {
-  const conditionNames: Record<ConditionCode, string> = {
-    NM: "Near Mint",
-    LP: "Lightly Played",
-    MP: "Moderately Played",
-    HP: "Heavily Played",
-    DMG: "Damaged",
-  };
-  const finishNames: Record<FinishCode, string> = {
-    NF: "Non-Foil",
-    F: "Foil",
-    E: "Etched",
-  };
-  return `${conditionNames[condition]} - ${finishNames[finish]}`;
+  return `${CONDITION_NAMES[condition]} - ${FINISH_NAMES[finish]}`;
 }
 
 /** Round to 2 decimal places */

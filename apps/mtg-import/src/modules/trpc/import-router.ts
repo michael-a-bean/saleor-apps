@@ -74,6 +74,18 @@ function getScryfallClient(): ScryfallClient {
 // Active processors (for cancellation)
 const activeProcessors = new Map<string, JobProcessor>();
 
+// Graceful shutdown: checkpoint and mark jobs as interrupted on SIGTERM
+function handleShutdown(signal: string) {
+  if (activeProcessors.size === 0) return;
+  logger.info(`${signal} received, cancelling ${activeProcessors.size} active import job(s)`);
+  for (const [jobId, processor] of activeProcessors) {
+    logger.info("Cancelling job due to shutdown", { jobId });
+    processor.cancel();
+  }
+}
+process.on("SIGTERM", () => handleShutdown("SIGTERM"));
+process.on("SIGINT", () => handleShutdown("SIGINT"));
+
 // --- Jobs Router ---
 
 const jobsRouter = router({

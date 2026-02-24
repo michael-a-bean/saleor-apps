@@ -168,6 +168,32 @@ export class JobProcessor {
         }
       }
 
+      // If aborted (e.g. SIGTERM), save checkpoint and mark as CANCELLED
+      if (this.abortController.signal.aborted) {
+        await this.saveCheckpoint(job.id, totalCards, result);
+        await this.prisma.importJob.update({
+          where: { id: job.id },
+          data: {
+            status: "CANCELLED",
+            cardsProcessed: result.cardsProcessed,
+            cardsTotal: totalCards,
+            variantsCreated: result.variantsCreated,
+            errors: result.errors,
+            skipped: result.skipped,
+            errorLog: JSON.stringify(result.errorLog.slice(0, 100)),
+            errorMessage: "Interrupted by process shutdown (SIGTERM)",
+          },
+        });
+
+        logger.info("Job checkpointed and cancelled due to shutdown", {
+          jobId: job.id,
+          cardsProcessed: result.cardsProcessed,
+          checkpoint: totalCards,
+        });
+
+        return result;
+      }
+
       // Process remaining cards
       if (batch.length > 0) {
         await this.processBatch(batch, job, importContext, attributeIdMap, result, pipelineOptions);
@@ -466,7 +492,7 @@ export class JobProcessor {
         }
       }
 
-      logger.debug("Batch processed", {
+      logger.info("Batch processed", {
         jobId: job.id,
         batchSize: cards.length,
         processed: result.cardsProcessed,
@@ -494,7 +520,7 @@ export class JobProcessor {
         errors: result.errors,
       },
     });
-    logger.debug("Checkpoint saved", { jobId, totalProcessed });
+    logger.info("Checkpoint saved", { jobId, totalProcessed });
   }
 
   /** Update SetAudit with aggregated import results for a set */

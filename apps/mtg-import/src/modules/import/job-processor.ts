@@ -22,7 +22,7 @@ import { cardToProductInput, batchCards, type PipelineOptions, DEFAULT_CONDITION
 
 const logger = createLogger("JobProcessor");
 
-const DEFAULT_BATCH_SIZE = 50;
+const DEFAULT_BATCH_SIZE = 25;
 const CHECKPOINT_INTERVAL = 100;
 
 export interface ProcessorConfig {

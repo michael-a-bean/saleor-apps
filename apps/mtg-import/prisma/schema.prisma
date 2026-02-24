@@ -172,6 +172,7 @@ model ImportSettings {
 
   // Import behavior
   importableSetTypes String[] @default(["core", "expansion", "masters", "draft_innovation", "commander", "starter", "funny"])
+  physicalOnly       Boolean  @default(true)
 
   updatedAt DateTime @updatedAt
 }

@@ -49,6 +49,7 @@ const importSettingsSchema = z.object({
   isAvailableForPurchase: z.boolean(),
   trackInventory: z.boolean(),
   importableSetTypes: z.array(z.string()).min(1),
+  physicalOnly: z.boolean(),
 });
 
 export const settingsRouter = router({

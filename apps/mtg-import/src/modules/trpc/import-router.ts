@@ -199,7 +199,16 @@ const jobsRouter = router({
         try {
           const set = await getScryfallClient().getSet(input.setCode.toLowerCase());
           cardsTotal = set.card_count;
-        } catch {
+
+          // Reject digital-only sets when physicalOnly is enabled
+          if (set.digital && (settings?.physicalOnly ?? true)) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `Set "${set.name}" (${input.setCode}) is digital-only. Disable "Physical Only" in settings to import digital sets.`,
+            });
+          }
+        } catch (err) {
+          if (err instanceof TRPCError) throw err;
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: `Set "${input.setCode}" not found on Scryfall`,
@@ -373,16 +382,17 @@ const setsRouter = router({
   list: protectedClientProcedure.query(async ({ ctx }) => {
     const defaultSetTypes = ["core", "expansion", "masters", "draft_innovation", "commander", "starter", "funny"];
 
-    // Load importable set types from settings (if configured)
+    // Load importable set types and physicalOnly toggle from settings
     const settings = await ctx.prisma.importSettings.findUnique({
       where: { installationId: ctx.installationId },
-      select: { importableSetTypes: true },
+      select: { importableSetTypes: true, physicalOnly: true },
     });
     const setTypes = settings?.importableSetTypes?.length ? settings.importableSetTypes : defaultSetTypes;
+    const physicalOnly = settings?.physicalOnly ?? true;
 
     const sets = await getScryfallClient().listSets();
     const importable = sets
-      .filter((s) => !s.digital)
+      .filter((s) => !physicalOnly || !s.digital)
       .filter((s) => setTypes.includes(s.set_type))
       .sort((a, b) => {
         const dateA = a.released_at ?? "";

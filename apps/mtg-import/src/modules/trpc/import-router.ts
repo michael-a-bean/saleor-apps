@@ -22,8 +22,41 @@ import { JobProcessor } from "../import/job-processor";
 import { ATTRIBUTE_DEFS } from "../import/attribute-map";
 import { SaleorImportClient } from "../saleor";
 import { MtgjsonBulkDataManager } from "../mtgjson";
+import { buildAttributeIdMap } from "../import/attribute-map";
 import { protectedClientProcedure } from "./protected-client-procedure";
 import { router } from "./trpc-server";
+
+/**
+ * Reverse lookup: variant display name → canonical condition value for dropdown.
+ * Variant names use full condition names (e.g., "Near Mint - Non-Foil").
+ */
+const CONDITION_REVERSE: Record<string, string> = {
+  "Near Mint": "Near Mint",
+  "Lightly Played": "Lightly Played",
+  "Moderately Played": "Moderately Played",
+  "Heavily Played": "Heavily Played",
+  "Damaged": "Damaged",
+  // Short codes (just in case)
+  "NM": "Near Mint",
+  "LP": "Lightly Played",
+  "MP": "Moderately Played",
+  "HP": "Heavily Played",
+  "DMG": "Damaged",
+};
+
+/**
+ * Reverse lookup: variant display name → canonical finish value for dropdown.
+ */
+const FINISH_REVERSE: Record<string, string> = {
+  "Non-Foil": "Non-Foil",
+  "Nonfoil": "Non-Foil",
+  "Foil": "Foil",
+  "Etched": "Etched",
+  // Short codes
+  "NF": "Non-Foil",
+  "F": "Foil",
+  "E": "Etched",
+};
 
 const logger = createLogger("ImportRouter");
 
@@ -678,6 +711,115 @@ const setsRouter = router({
       sets: results,
     };
   }),
+
+  /** Backfill variant attributes (mtg-condition, mtg-finish) by parsing variant names */
+  backfillAttributes: protectedClientProcedure
+    .input(z.object({ setCode: z.string().min(2).max(10) }))
+    .mutation(async ({ ctx, input }) => {
+      const setCode = input.setCode.toLowerCase();
+      const saleor = new SaleorImportClient(ctx.apiClient!);
+
+      // Resolve variant attribute IDs from product type
+      const productType = await saleor.getProductType();
+      const variantAttrMap = buildAttributeIdMap(productType.variantAttributes);
+      const condAttrId = variantAttrMap.get("mtg-condition");
+      const finishAttrId = variantAttrMap.get("mtg-finish");
+
+      if (!condAttrId || !finishAttrId) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Product type missing mtg-condition or mtg-finish variant attributes",
+        });
+      }
+
+      // Fetch all products with variants for this set
+      const products = await saleor.getProductsWithVariants(setCode);
+
+      let productsScanned = 0;
+      let variantsUpdated = 0;
+      let variantsSkipped = 0;
+      const errors: string[] = [];
+
+      for (const product of products) {
+        productsScanned++;
+        const variantUpdates: Array<{ id: string; attributes: Array<Record<string, unknown>> }> = [];
+
+        for (const variant of product.variants) {
+          // Check if variant already has both attributes populated
+          const hasCondition = variant.attributes.some(
+            (a) => a.attribute.slug === "mtg-condition" && a.values.length > 0 && a.values[0].name
+          );
+          const hasFinish = variant.attributes.some(
+            (a) => a.attribute.slug === "mtg-finish" && a.values.length > 0 && a.values[0].name
+          );
+
+          if (hasCondition && hasFinish) {
+            variantsSkipped++;
+            continue;
+          }
+
+          // Parse variant name: "Near Mint - Non-Foil"
+          const parts = variant.name.split(" - ");
+          if (parts.length < 2) {
+            errors.push(`Cannot parse variant name: "${variant.name}" (product: ${product.name})`);
+            continue;
+          }
+
+          const conditionPart = parts[0].trim();
+          const finishPart = parts.slice(1).join(" - ").trim();
+
+          const conditionValue = CONDITION_REVERSE[conditionPart];
+          const finishValue = FINISH_REVERSE[finishPart];
+
+          if (!conditionValue) {
+            errors.push(`Unknown condition: "${conditionPart}" in variant "${variant.name}" (product: ${product.name})`);
+            continue;
+          }
+          if (!finishValue) {
+            errors.push(`Unknown finish: "${finishPart}" in variant "${variant.name}" (product: ${product.name})`);
+            continue;
+          }
+
+          const attrs: Array<Record<string, unknown>> = [];
+          if (!hasCondition) {
+            attrs.push({ id: condAttrId, dropdown: { value: conditionValue } });
+          }
+          if (!hasFinish) {
+            attrs.push({ id: finishAttrId, dropdown: { value: finishValue } });
+          }
+
+          if (attrs.length > 0) {
+            variantUpdates.push({ id: variant.id, attributes: attrs });
+          }
+        }
+
+        if (variantUpdates.length > 0) {
+          try {
+            const result = await saleor.bulkUpdateVariants(product.id, variantUpdates);
+            variantsUpdated += result.count;
+
+            // Collect row-level errors
+            for (const row of result.results) {
+              for (const err of row.errors) {
+                errors.push(`Update error (${product.name}): ${err.message ?? err.code}`);
+              }
+            }
+          } catch (err) {
+            errors.push(`Failed to update variants for ${product.name}: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
+      }
+
+      logger.info("Backfill attributes complete", {
+        setCode,
+        productsScanned,
+        variantsUpdated,
+        variantsSkipped,
+        errorCount: errors.length,
+      });
+
+      return { productsScanned, variantsUpdated, variantsSkipped, errors };
+    }),
 });
 
 // --- System Router ---

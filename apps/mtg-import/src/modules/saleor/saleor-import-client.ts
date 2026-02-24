@@ -22,15 +22,19 @@ import {
   PRODUCT_BULK_UPDATE_MUTATION,
   PRODUCT_BY_SLUG_QUERY,
   PRODUCT_TYPES_QUERY,
+  PRODUCT_VARIANT_BULK_UPDATE_MUTATION,
+  PRODUCTS_BY_METADATA_QUERY,
+  PRODUCTS_WITH_VARIANTS_QUERY,
   type ProductAttributeAssignResult,
   type ProductBulkCreateResult,
   type ProductBulkUpdateResult,
-  PRODUCTS_BY_METADATA_QUERY,
   type SaleorCategory,
   type SaleorChannel,
   type SaleorProductType,
   type SaleorProductWithAttributes,
+  type SaleorProductWithVariants,
   type SaleorWarehouse,
+  type VariantBulkUpdateResult,
   WAREHOUSES_QUERY,
 } from "./graphql-operations";
 
@@ -391,5 +395,70 @@ export class SaleorImportClient {
     });
 
     return { created: newlyCreatedIds.length, assigned: assignedCount, errors };
+  }
+
+  /** Fetch all products for a set with their variant details (paginated) */
+  async getProductsWithVariants(
+    setCode: string,
+    channel: string = "webstore"
+  ): Promise<SaleorProductWithVariants[]> {
+    const allProducts: SaleorProductWithVariants[] = [];
+    let cursor: string | null = null;
+    let hasNextPage = true;
+
+    while (hasNextPage) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result: { data?: any; error?: { message: string } } = await this.client
+        .query(PRODUCTS_WITH_VARIANTS_QUERY, {
+          filter: { metadata: [{ key: "set_code", value: setCode }] },
+          channel,
+          first: 100,
+          after: cursor,
+        })
+        .toPromise();
+
+      if (result.error) {
+        throw new SaleorApiError(`Failed to fetch products with variants: ${result.error.message}`);
+      }
+
+      const edges = result.data?.products?.edges ?? [];
+      for (const edge of edges) {
+        allProducts.push(edge.node as SaleorProductWithVariants);
+      }
+
+      const pageInfo: { hasNextPage?: boolean; endCursor?: string | null } | undefined =
+        result.data?.products?.pageInfo;
+      hasNextPage = pageInfo?.hasNextPage ?? false;
+      cursor = pageInfo?.endCursor ?? null;
+    }
+
+    return allProducts;
+  }
+
+  /** Bulk update variant attributes for a single product */
+  async bulkUpdateVariants(
+    productId: string,
+    variants: Array<{ id: string; attributes: Array<Record<string, unknown>> }>
+  ): Promise<VariantBulkUpdateResult> {
+    const result = await this.client
+      .mutation(PRODUCT_VARIANT_BULK_UPDATE_MUTATION, { productId, variants })
+      .toPromise();
+
+    if (result.error) {
+      throw new SaleorApiError(`productVariantBulkUpdate failed: ${result.error.message}`);
+    }
+
+    const data = result.data?.productVariantBulkUpdate as VariantBulkUpdateResult | undefined;
+    if (!data) {
+      throw new SaleorApiError("productVariantBulkUpdate returned no data");
+    }
+
+    for (const row of data.results) {
+      if (row.errors.length > 0) {
+        logger.warn("Variant update error", { productId, errors: row.errors });
+      }
+    }
+
+    return data;
   }
 }

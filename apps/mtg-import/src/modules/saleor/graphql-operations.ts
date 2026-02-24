@@ -133,6 +133,51 @@ export const PRODUCTS_BY_METADATA_QUERY = gql`
   }
 `;
 
+export const PRODUCTS_WITH_VARIANTS_QUERY = gql`
+  query ProductsWithVariants($filter: ProductFilterInput!, $channel: String!, $first: Int!, $after: String) {
+    products(first: $first, filter: $filter, channel: $channel, after: $after) {
+      edges {
+        node {
+          id
+          name
+          variants {
+            id
+            name
+            attributes {
+              attribute {
+                id
+                slug
+              }
+              values {
+                name
+              }
+            }
+          }
+        }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
+`;
+
+export const PRODUCT_VARIANT_BULK_UPDATE_MUTATION = gql`
+  mutation ProductVariantBulkUpdate($productId: ID!, $variants: [ProductVariantBulkUpdateInput!]!) {
+    productVariantBulkUpdate(product: $productId, variants: $variants, errorPolicy: REJECT_FAILED_ROWS) {
+      count
+      results {
+        errors {
+          message
+          code
+          path
+        }
+      }
+    }
+  }
+`;
+
 // --- Mutations ---
 
 export const PRODUCT_BULK_CREATE_MUTATION = gql`
@@ -434,6 +479,30 @@ export interface ProductAttributeAssignResult {
     field: string | null;
     message: string | null;
     code: string;
+  }>;
+}
+
+export interface VariantBulkUpdateResult {
+  count: number;
+  results: Array<{
+    errors: Array<{
+      message: string | null;
+      code: string;
+      path: string | null;
+    }>;
+  }>;
+}
+
+export interface SaleorProductWithVariants {
+  id: string;
+  name: string;
+  variants: Array<{
+    id: string;
+    name: string;
+    attributes: Array<{
+      attribute: { id: string; slug: string };
+      values: Array<{ name: string | null }>;
+    }>;
   }>;
 }
 

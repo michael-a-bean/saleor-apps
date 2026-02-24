@@ -88,6 +88,16 @@ const SetsPage: NextPage = () => {
     onError: (err) => notifyError("Repair failed", err.message),
   });
 
+  const backfillAttrsMutation = trpcClient.sets.backfillAttributes.useMutation({
+    onSuccess: (data) => {
+      notifySuccess(
+        "Backfill complete",
+        `${data.productsScanned} products scanned, ${data.variantsUpdated} variants updated, ${data.variantsSkipped} skipped.${data.errors.length > 0 ? ` ${data.errors.length} errors.` : ""}`
+      );
+    },
+    onError: (err) => notifyError("Backfill failed", err.message),
+  });
+
   // Filter and search sets
   const filteredSets = useMemo(() => {
     if (!sets) return [];
@@ -601,6 +611,14 @@ const SetsPage: NextPage = () => {
                                   {auditingSet === set.code && auditQuery.isLoading
                                     ? "..."
                                     : "Audit"}
+                                </Button>
+                                <Button
+                                  size="small"
+                                  variant="tertiary"
+                                  onClick={() => backfillAttrsMutation.mutate({ setCode: set.code })}
+                                  disabled={backfillAttrsMutation.isLoading}
+                                >
+                                  {backfillAttrsMutation.isLoading ? "..." : "Backfill"}
                                 </Button>
                               </>
                             )}

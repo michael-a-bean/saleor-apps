@@ -100,10 +100,7 @@ const SetsPage: NextPage = () => {
 
   const backfillAllAttrsMutation = trpcClient.sets.backfillAllAttributes.useMutation({
     onSuccess: (data) => {
-      notifySuccess(
-        "All attrs fixed",
-        `${data.setsProcessed}/${data.totalSets} sets, ${data.variantsUpdated} variants updated, ${data.variantsSkipped} skipped.${data.errors.length > 0 ? ` ${data.errors.length} errors.` : ""}`
-      );
+      notifySuccess("Fix All Attrs started", data.message);
     },
     onError: (err) => notifyError("Fix all attrs failed", err.message),
   });

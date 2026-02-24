@@ -826,7 +826,7 @@ const setsRouter = router({
     .mutation(async ({ ctx }) => {
       const saleor = new SaleorImportClient(ctx.apiClient!);
 
-      // Resolve variant attribute IDs from product type
+      // Validate prerequisites before starting background work
       const productType = await saleor.getProductType();
       const variantAttrMap = buildAttributeIdMap(productType.variantAttributes);
       const condAttrId = variantAttrMap.get("mtg-condition");
@@ -845,92 +845,96 @@ const setsRouter = router({
         select: { setCode: true },
       });
 
-      let totalProductsScanned = 0;
-      let totalVariantsUpdated = 0;
-      let totalVariantsSkipped = 0;
-      const allErrors: string[] = [];
-      let setsProcessed = 0;
-
-      for (const audit of audits) {
-        try {
-          const products = await saleor.getProductsWithVariants(audit.setCode);
-
-          for (const product of products) {
-            totalProductsScanned++;
-            const variantUpdates: Array<{ id: string; attributes: Array<Record<string, unknown>> }> = [];
-
-            for (const variant of product.variants) {
-              const hasCondition = variant.attributes.some(
-                (a) => a.attribute.slug === "mtg-condition" && a.values.length > 0 && a.values[0].name
-              );
-              const hasFinish = variant.attributes.some(
-                (a) => a.attribute.slug === "mtg-finish" && a.values.length > 0 && a.values[0].name
-              );
-
-              if (hasCondition && hasFinish) {
-                totalVariantsSkipped++;
-                continue;
-              }
-
-              const parts = variant.name.split(" - ");
-              if (parts.length < 2) {
-                allErrors.push(`Cannot parse: "${variant.name}" (${product.name})`);
-                continue;
-              }
-
-              const conditionValue = CONDITION_REVERSE[parts[0].trim()];
-              const finishValue = FINISH_REVERSE[parts.slice(1).join(" - ").trim()];
-
-              if (!conditionValue || !finishValue) {
-                allErrors.push(`Unknown values in "${variant.name}" (${product.name})`);
-                continue;
-              }
-
-              const attrs: Array<Record<string, unknown>> = [];
-              if (!hasCondition) attrs.push({ id: condAttrId, dropdown: { value: conditionValue } });
-              if (!hasFinish) attrs.push({ id: finishAttrId, dropdown: { value: finishValue } });
-
-              if (attrs.length > 0) {
-                variantUpdates.push({ id: variant.id, attributes: attrs });
-              }
-            }
-
-            if (variantUpdates.length > 0) {
-              try {
-                const result = await saleor.bulkUpdateVariants(product.id, variantUpdates);
-                totalVariantsUpdated += result.count;
-                for (const row of result.results) {
-                  for (const err of row.errors) {
-                    allErrors.push(`${product.name}: ${err.message ?? err.code}`);
-                  }
-                }
-              } catch (err) {
-                allErrors.push(`${product.name}: ${err instanceof Error ? err.message : String(err)}`);
-              }
-            }
-          }
-
-          setsProcessed++;
-        } catch (err) {
-          allErrors.push(`Set ${audit.setCode}: ${err instanceof Error ? err.message : String(err)}`);
-        }
+      if (audits.length === 0) {
+        return { totalSets: 0, message: "No imported sets found. Run Rebuild Audits first." };
       }
 
-      logger.info("Backfill all attributes complete", {
-        setsProcessed,
-        totalProductsScanned,
-        totalVariantsUpdated,
-        totalVariantsSkipped,
-        errorCount: allErrors.length,
+      // Fire-and-forget: process sets in the background so we don't hit ALB timeout.
+      // Capture references needed for the async work before returning.
+      const prisma = ctx.prisma;
+      const installationId = ctx.installationId;
+
+      const processInBackground = async () => {
+        let setsProcessed = 0;
+        let totalVariantsUpdated = 0;
+        let totalErrors = 0;
+
+        for (const audit of audits) {
+          try {
+            const products = await saleor.getProductsWithVariants(audit.setCode);
+
+            for (const product of products) {
+              const variantUpdates: Array<{ id: string; attributes: Array<Record<string, unknown>> }> = [];
+
+              for (const variant of product.variants) {
+                const hasCondition = variant.attributes.some(
+                  (a) => a.attribute.slug === "mtg-condition" && a.values.length > 0 && a.values[0].name
+                );
+                const hasFinish = variant.attributes.some(
+                  (a) => a.attribute.slug === "mtg-finish" && a.values.length > 0 && a.values[0].name
+                );
+
+                if (hasCondition && hasFinish) continue;
+
+                const parts = variant.name.split(" - ");
+                if (parts.length < 2) continue;
+
+                const conditionValue = CONDITION_REVERSE[parts[0].trim()];
+                const finishValue = FINISH_REVERSE[parts.slice(1).join(" - ").trim()];
+
+                if (!conditionValue || !finishValue) continue;
+
+                const attrs: Array<Record<string, unknown>> = [];
+                if (!hasCondition) attrs.push({ id: condAttrId, dropdown: { value: conditionValue } });
+                if (!hasFinish) attrs.push({ id: finishAttrId, dropdown: { value: finishValue } });
+
+                if (attrs.length > 0) {
+                  variantUpdates.push({ id: variant.id, attributes: attrs });
+                }
+              }
+
+              if (variantUpdates.length > 0) {
+                try {
+                  const result = await saleor.bulkUpdateVariants(product.id, variantUpdates);
+                  totalVariantsUpdated += result.count;
+                } catch {
+                  totalErrors++;
+                }
+              }
+            }
+
+            setsProcessed++;
+            if (setsProcessed % 25 === 0) {
+              logger.info("Fix all attrs progress", {
+                setsProcessed,
+                totalSets: audits.length,
+                totalVariantsUpdated,
+              });
+            }
+          } catch {
+            totalErrors++;
+          }
+        }
+
+        logger.info("Fix all attrs background job complete", {
+          setsProcessed,
+          totalSets: audits.length,
+          totalVariantsUpdated,
+          totalErrors,
+        });
+      };
+
+      // Start background processing — don't await
+      processInBackground().catch((err) => {
+        logger.error("Fix all attrs background job failed", {
+          error: err instanceof Error ? err.message : String(err),
+        });
       });
 
+      // Return immediately
       return {
-        setsProcessed,
         totalSets: audits.length,
-        productsScanned: totalProductsScanned,
-        variantsUpdated: totalVariantsUpdated,
-        variantsSkipped: totalVariantsSkipped,
-        errors: allErrors.slice(0, 100), // Cap error list to prevent huge responses
+        message: `Processing ${audits.length} sets in the background. Check logs for progress.`,
       };
     }),
 

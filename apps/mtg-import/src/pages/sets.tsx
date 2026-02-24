@@ -108,6 +108,16 @@ const SetsPage: NextPage = () => {
     onError: (err) => notifyError("Fix all attrs failed", err.message),
   });
 
+  const rebuildAuditsMutation = trpcClient.sets.rebuildAudits.useMutation({
+    onSuccess: (data) => {
+      notifySuccess(
+        "Audits rebuilt",
+        `${data.setsCreated} created, ${data.setsUpdated} updated (${data.totalSets} total).${data.errors.length > 0 ? ` ${data.errors.length} errors.` : ""}`
+      );
+    },
+    onError: (err) => notifyError("Rebuild audits failed", err.message),
+  });
+
   // Filter and search sets
   const filteredSets = useMemo(() => {
     if (!sets) return [];
@@ -195,6 +205,15 @@ const SetsPage: NextPage = () => {
           Sets
         </Text>
         <Box display="flex" gap={2}>
+          <Button
+            variant="secondary"
+            onClick={() => rebuildAuditsMutation.mutate()}
+            disabled={rebuildAuditsMutation.isLoading}
+          >
+            {rebuildAuditsMutation.isLoading
+              ? "Rebuilding..."
+              : "Rebuild Audits"}
+          </Button>
           <Button
             variant="secondary"
             onClick={() => backfillAllAttrsMutation.mutate()}

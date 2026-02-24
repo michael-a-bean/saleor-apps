@@ -190,9 +190,13 @@ export class JobProcessor {
         },
       });
 
-      // Update SetAudit for completed SET/BACKFILL imports
-      if (finalStatus === "COMPLETED" && (job.type === "SET" || job.type === "BACKFILL") && job.setCode) {
-        await this.updateSetAudit(job);
+      // Update SetAudit for completed imports
+      if (finalStatus === "COMPLETED") {
+        if ((job.type === "SET" || job.type === "BACKFILL") && job.setCode) {
+          await this.updateSetAudit(job);
+        } else if (job.type === "BULK") {
+          await this.rebuildSetAudits(job.installationId);
+        }
       }
 
       logger.info("Import job complete", {
@@ -572,6 +576,71 @@ export class JobProcessor {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       logger.warn("Failed to update SetAudit", { setCode: job.setCode, error: msg });
+    }
+  }
+
+  /** Rebuild setAudit records from importedProduct data after a BULK import */
+  private async rebuildSetAudits(installationId: string): Promise<void> {
+    try {
+      const setCounts = await this.prisma.importedProduct.groupBy({
+        by: ["setCode"],
+        where: {
+          success: true,
+          importJob: { installationId },
+        },
+        _count: { _all: true },
+      });
+
+      if (setCounts.length === 0) return;
+
+      // Fetch all sets from Scryfall in one call
+      const scryfallSets = await this.scryfall.listSets();
+      const scryfallMap = new Map(scryfallSets.map((s) => [s.code, s]));
+
+      let created = 0;
+      let updated = 0;
+
+      for (const group of setCounts) {
+        try {
+          const scryfall = scryfallMap.get(group.setCode);
+
+          await this.prisma.setAudit.upsert({
+            where: {
+              installationId_setCode: { installationId, setCode: group.setCode },
+            },
+            update: {
+              importedCards: group._count._all,
+              totalCards: scryfall?.card_count ?? group._count._all,
+              lastImportedAt: new Date(),
+              setName: scryfall?.name ?? group.setCode.toUpperCase(),
+              releasedAt: scryfall?.released_at ? new Date(scryfall.released_at) : null,
+              setType: scryfall?.set_type ?? null,
+              iconSvgUri: scryfall?.icon_svg_uri ?? null,
+            },
+            create: {
+              installationId,
+              setCode: group.setCode,
+              setName: scryfall?.name ?? group.setCode.toUpperCase(),
+              totalCards: scryfall?.card_count ?? group._count._all,
+              importedCards: group._count._all,
+              lastImportedAt: new Date(),
+              releasedAt: scryfall?.released_at ? new Date(scryfall.released_at) : null,
+              setType: scryfall?.set_type ?? null,
+              iconSvgUri: scryfall?.icon_svg_uri ?? null,
+            },
+          });
+
+          created++;
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          logger.warn("Failed to upsert SetAudit during rebuild", { setCode: group.setCode, error: msg });
+        }
+      }
+
+      logger.info("Bulk import: SetAudits rebuilt", { created, updated, totalSets: setCounts.length });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn("Failed to rebuild SetAudits after BULK import", { error: msg });
     }
   }
 }

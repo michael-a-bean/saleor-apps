@@ -933,6 +933,107 @@ const setsRouter = router({
         errors: allErrors.slice(0, 100), // Cap error list to prevent huge responses
       };
     }),
+
+  /**
+   * Rebuild setAudit records from importedProduct data.
+   * Useful after a BULK import which doesn't create per-set audits,
+   * or to reconcile audit state from existing imported products.
+   */
+  rebuildAudits: protectedClientProcedure
+    .mutation(async ({ ctx }) => {
+      // Group imported products by setCode with counts
+      const setCounts = await ctx.prisma.importedProduct.groupBy({
+        by: ["setCode"],
+        where: {
+          success: true,
+          importJob: { installationId: ctx.installationId },
+        },
+        _count: { _all: true },
+      });
+
+      if (setCounts.length === 0) {
+        return { setsCreated: 0, setsUpdated: 0, totalSets: 0, errors: [] };
+      }
+
+      // Fetch all Scryfall sets in one call for metadata lookup
+      const scryfallSets = await getScryfallClient().listSets();
+      const scryfallMap = new Map(scryfallSets.map((s) => [s.code, s]));
+
+      let setsCreated = 0;
+      let setsUpdated = 0;
+      const errors: string[] = [];
+
+      for (const group of setCounts) {
+        try {
+          const scryfall = scryfallMap.get(group.setCode);
+          const setName = scryfall?.name ?? group.setCode.toUpperCase();
+          const totalCards = scryfall?.card_count ?? group._count._all;
+          const releasedAt = scryfall?.released_at ? new Date(scryfall.released_at) : null;
+          const setType = scryfall?.set_type ?? null;
+          const iconSvgUri = scryfall?.icon_svg_uri ?? null;
+
+          const existing = await ctx.prisma.setAudit.findUnique({
+            where: {
+              installationId_setCode: {
+                installationId: ctx.installationId,
+                setCode: group.setCode,
+              },
+            },
+          });
+
+          await ctx.prisma.setAudit.upsert({
+            where: {
+              installationId_setCode: {
+                installationId: ctx.installationId,
+                setCode: group.setCode,
+              },
+            },
+            update: {
+              importedCards: group._count._all,
+              totalCards,
+              lastImportedAt: new Date(),
+              setName,
+              releasedAt,
+              setType,
+              iconSvgUri,
+            },
+            create: {
+              installationId: ctx.installationId,
+              setCode: group.setCode,
+              setName,
+              totalCards,
+              importedCards: group._count._all,
+              lastImportedAt: new Date(),
+              releasedAt,
+              setType,
+              iconSvgUri,
+            },
+          });
+
+          if (existing) {
+            setsUpdated++;
+          } else {
+            setsCreated++;
+          }
+        } catch (err) {
+          errors.push(`${group.setCode}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
+      logger.info("Rebuild audits complete", {
+        setsCreated,
+        setsUpdated,
+        totalSets: setCounts.length,
+        errorCount: errors.length,
+      });
+
+      return {
+        setsCreated,
+        setsUpdated,
+        totalSets: setCounts.length,
+        errors: errors.slice(0, 50),
+      };
+    }),
 });
 
 // --- System Router ---

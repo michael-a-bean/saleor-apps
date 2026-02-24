@@ -59,7 +59,7 @@ const SetsPage: NextPage = () => {
 
   const batchMutation = trpcClient.jobs.createBatch.useMutation({
     onSuccess: () => {
-      notifySuccess("Batch created", "Backfill jobs queued for all incomplete sets.");
+      notifySuccess("Batch created", "Re-import jobs queued for all incomplete sets.");
       router.push("/import");
     },
     onError: (err) => notifyError("Batch failed", err.message),
@@ -91,11 +91,21 @@ const SetsPage: NextPage = () => {
   const backfillAttrsMutation = trpcClient.sets.backfillAttributes.useMutation({
     onSuccess: (data) => {
       notifySuccess(
-        "Backfill complete",
-        `${data.productsScanned} products scanned, ${data.variantsUpdated} variants updated, ${data.variantsSkipped} skipped.${data.errors.length > 0 ? ` ${data.errors.length} errors.` : ""}`
+        "Attrs fixed",
+        `${data.productsScanned} products, ${data.variantsUpdated} variants updated, ${data.variantsSkipped} skipped.${data.errors.length > 0 ? ` ${data.errors.length} errors.` : ""}`
       );
     },
-    onError: (err) => notifyError("Backfill failed", err.message),
+    onError: (err) => notifyError("Fix attrs failed", err.message),
+  });
+
+  const backfillAllAttrsMutation = trpcClient.sets.backfillAllAttributes.useMutation({
+    onSuccess: (data) => {
+      notifySuccess(
+        "All attrs fixed",
+        `${data.setsProcessed}/${data.totalSets} sets, ${data.variantsUpdated} variants updated, ${data.variantsSkipped} skipped.${data.errors.length > 0 ? ` ${data.errors.length} errors.` : ""}`
+      );
+    },
+    onError: (err) => notifyError("Fix all attrs failed", err.message),
   });
 
   // Filter and search sets
@@ -184,17 +194,28 @@ const SetsPage: NextPage = () => {
         <Text as="h1" size={10} fontWeight="bold">
           Sets
         </Text>
-        {incompleteSets.length > 0 && (
+        <Box display="flex" gap={2}>
           <Button
             variant="secondary"
-            onClick={handleBackfillAllIncomplete}
-            disabled={batchMutation.isLoading}
+            onClick={() => backfillAllAttrsMutation.mutate()}
+            disabled={backfillAllAttrsMutation.isLoading}
           >
-            {batchMutation.isLoading
-              ? "Creating jobs..."
-              : `Backfill All Incomplete (${incompleteSets.length})`}
+            {backfillAllAttrsMutation.isLoading
+              ? "Fixing attrs..."
+              : "Fix All Attrs"}
           </Button>
-        )}
+          {incompleteSets.length > 0 && (
+            <Button
+              variant="secondary"
+              onClick={handleBackfillAllIncomplete}
+              disabled={batchMutation.isLoading}
+            >
+              {batchMutation.isLoading
+                ? "Creating jobs..."
+                : `Re-import Incomplete (${incompleteSets.length})`}
+            </Button>
+          )}
+        </Box>
       </Box>
 
       {/* Scan Results Panel */}
@@ -216,7 +237,7 @@ const SetsPage: NextPage = () => {
                       onClick={() => handleBackfill(scanningSet)}
                       disabled={createMutation.isLoading}
                     >
-                      Backfill {scanQuery.data.missingCount + scanQuery.data.failedCount} Cards
+                      Re-import {scanQuery.data.missingCount + scanQuery.data.failedCount} Cards
                     </Button>
                   )}
                 <Button variant="secondary" size="small" onClick={() => setScanningSet(null)}>
@@ -618,7 +639,7 @@ const SetsPage: NextPage = () => {
                                   onClick={() => backfillAttrsMutation.mutate({ setCode: set.code })}
                                   disabled={backfillAttrsMutation.isLoading}
                                 >
-                                  {backfillAttrsMutation.isLoading ? "..." : "Backfill"}
+                                  {backfillAttrsMutation.isLoading ? "..." : "Fix Attrs"}
                                 </Button>
                               </>
                             )}

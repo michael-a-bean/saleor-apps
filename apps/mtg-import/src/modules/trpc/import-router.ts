@@ -820,6 +820,119 @@ const setsRouter = router({
 
       return { productsScanned, variantsUpdated, variantsSkipped, errors };
     }),
+
+  /** Backfill variant attributes for ALL imported sets */
+  backfillAllAttributes: protectedClientProcedure
+    .mutation(async ({ ctx }) => {
+      const saleor = new SaleorImportClient(ctx.apiClient!);
+
+      // Resolve variant attribute IDs from product type
+      const productType = await saleor.getProductType();
+      const variantAttrMap = buildAttributeIdMap(productType.variantAttributes);
+      const condAttrId = variantAttrMap.get("mtg-condition");
+      const finishAttrId = variantAttrMap.get("mtg-finish");
+
+      if (!condAttrId || !finishAttrId) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Product type missing mtg-condition or mtg-finish variant attributes",
+        });
+      }
+
+      // Get all imported sets
+      const audits = await ctx.prisma.setAudit.findMany({
+        where: { installationId: ctx.installationId },
+        select: { setCode: true },
+      });
+
+      let totalProductsScanned = 0;
+      let totalVariantsUpdated = 0;
+      let totalVariantsSkipped = 0;
+      const allErrors: string[] = [];
+      let setsProcessed = 0;
+
+      for (const audit of audits) {
+        try {
+          const products = await saleor.getProductsWithVariants(audit.setCode);
+
+          for (const product of products) {
+            totalProductsScanned++;
+            const variantUpdates: Array<{ id: string; attributes: Array<Record<string, unknown>> }> = [];
+
+            for (const variant of product.variants) {
+              const hasCondition = variant.attributes.some(
+                (a) => a.attribute.slug === "mtg-condition" && a.values.length > 0 && a.values[0].name
+              );
+              const hasFinish = variant.attributes.some(
+                (a) => a.attribute.slug === "mtg-finish" && a.values.length > 0 && a.values[0].name
+              );
+
+              if (hasCondition && hasFinish) {
+                totalVariantsSkipped++;
+                continue;
+              }
+
+              const parts = variant.name.split(" - ");
+              if (parts.length < 2) {
+                allErrors.push(`Cannot parse: "${variant.name}" (${product.name})`);
+                continue;
+              }
+
+              const conditionValue = CONDITION_REVERSE[parts[0].trim()];
+              const finishValue = FINISH_REVERSE[parts.slice(1).join(" - ").trim()];
+
+              if (!conditionValue || !finishValue) {
+                allErrors.push(`Unknown values in "${variant.name}" (${product.name})`);
+                continue;
+              }
+
+              const attrs: Array<Record<string, unknown>> = [];
+              if (!hasCondition) attrs.push({ id: condAttrId, dropdown: { value: conditionValue } });
+              if (!hasFinish) attrs.push({ id: finishAttrId, dropdown: { value: finishValue } });
+
+              if (attrs.length > 0) {
+                variantUpdates.push({ id: variant.id, attributes: attrs });
+              }
+            }
+
+            if (variantUpdates.length > 0) {
+              try {
+                const result = await saleor.bulkUpdateVariants(product.id, variantUpdates);
+                totalVariantsUpdated += result.count;
+                for (const row of result.results) {
+                  for (const err of row.errors) {
+                    allErrors.push(`${product.name}: ${err.message ?? err.code}`);
+                  }
+                }
+              } catch (err) {
+                allErrors.push(`${product.name}: ${err instanceof Error ? err.message : String(err)}`);
+              }
+            }
+          }
+
+          setsProcessed++;
+        } catch (err) {
+          allErrors.push(`Set ${audit.setCode}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
+      logger.info("Backfill all attributes complete", {
+        setsProcessed,
+        totalProductsScanned,
+        totalVariantsUpdated,
+        totalVariantsSkipped,
+        errorCount: allErrors.length,
+      });
+
+      return {
+        setsProcessed,
+        totalSets: audits.length,
+        productsScanned: totalProductsScanned,
+        variantsUpdated: totalVariantsUpdated,
+        variantsSkipped: totalVariantsSkipped,
+        errors: allErrors.slice(0, 100), // Cap error list to prevent huge responses
+      };
+    }),
 });
 
 // --- System Router ---

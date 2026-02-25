@@ -21,6 +21,8 @@ import {
   PRODUCT_BULK_CREATE_MUTATION,
   PRODUCT_BULK_UPDATE_MUTATION,
   PRODUCT_BY_SLUG_QUERY,
+  PRODUCT_MEDIA_CREATE_MUTATION,
+  PRODUCT_METADATA_QUERY,
   PRODUCT_TYPES_QUERY,
   PRODUCT_VARIANT_BULK_UPDATE_MUTATION,
   PRODUCTS_BY_METADATA_QUERY,
@@ -28,6 +30,7 @@ import {
   type ProductAttributeAssignResult,
   type ProductBulkCreateResult,
   type ProductBulkUpdateResult,
+  type ProductMediaCreateResult,
   type SaleorCategory,
   type SaleorChannel,
   type SaleorProductType,
@@ -460,5 +463,63 @@ export class SaleorImportClient {
     }
 
     return data;
+  }
+
+  /** Fetch a product's metadata by ID */
+  async getProductMetadata(
+    productId: string
+  ): Promise<Array<{ key: string; value: string }> | null> {
+    const result = await this.client
+      .query(PRODUCT_METADATA_QUERY, { id: productId })
+      .toPromise();
+
+    if (result.error || !result.data?.product) {
+      return null;
+    }
+
+    return result.data.product.metadata;
+  }
+
+  /** Attach a media URL to a product via productMediaCreate. Returns media object or null on error. */
+  async createProductMedia(
+    productId: string,
+    mediaUrl: string,
+    alt: string
+  ): Promise<{ id: string; url: string } | null> {
+    try {
+      const result = await this.client
+        .mutation(PRODUCT_MEDIA_CREATE_MUTATION, {
+          input: { product: productId, mediaUrl, alt },
+        })
+        .toPromise();
+
+      if (result.error) {
+        logger.warn("productMediaCreate network error", {
+          productId,
+          error: result.error.message,
+        });
+        return null;
+      }
+
+      const data = result.data?.productMediaCreate as ProductMediaCreateResult | undefined;
+      if (!data) {
+        logger.warn("productMediaCreate returned no data", { productId });
+        return null;
+      }
+
+      if (data.errors.length > 0) {
+        logger.warn("productMediaCreate errors", {
+          productId,
+          errors: data.errors,
+        });
+        return null;
+      }
+
+      return data.media;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn("productMediaCreate failed", { productId, error: msg });
+      return null;
+    }
   }
 }

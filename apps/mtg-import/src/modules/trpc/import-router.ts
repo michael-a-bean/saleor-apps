@@ -696,6 +696,75 @@ const setsRouter = router({
       return { repaired: cardsTotal, failed: 0, jobId: job.id };
     }),
 
+  /** Repair missing images by calling productMediaCreate for products with mediaAttached=false */
+  repairImages: protectedClientProcedure
+    .input(z.object({ setCode: z.string().min(2).max(10) }))
+    .mutation(async ({ ctx, input }) => {
+      const setCode = input.setCode.toLowerCase();
+      const saleor = new SaleorImportClient(ctx.apiClient!);
+
+      // Find products needing image attachment
+      const products = await ctx.prisma.importedProduct.findMany({
+        where: {
+          setCode,
+          mediaAttached: false,
+          success: true,
+          saleorProductId: { not: "existing" },
+        },
+        select: {
+          id: true,
+          saleorProductId: true,
+          cardName: true,
+        },
+      });
+
+      if (products.length === 0) {
+        return { repaired: 0, failed: 0, errors: [] as string[] };
+      }
+
+      logger.info("Repairing images", { setCode, count: products.length });
+
+      let repaired = 0;
+      let failed = 0;
+      const errors: string[] = [];
+
+      for (const product of products) {
+        // Fetch image URL from product metadata
+        const metadata = await saleor.getProductMetadata(product.saleorProductId);
+        const imageUrl = metadata?.find((m) => m.key === "scryfall_image_url")?.value;
+
+        if (!imageUrl) {
+          // No scryfall_image_url — likely imported before two-phase code.
+          // Mark as handled so it doesn't appear in future repair runs.
+          await ctx.prisma.importedProduct.update({
+            where: { id: product.id },
+            data: { mediaAttached: true },
+          });
+          continue;
+        }
+
+        const media = await saleor.createProductMedia(
+          product.saleorProductId,
+          imageUrl,
+          product.cardName.substring(0, 250)
+        );
+
+        if (media) {
+          await ctx.prisma.importedProduct.update({
+            where: { id: product.id },
+            data: { mediaAttached: true },
+          });
+          repaired++;
+        } else {
+          failed++;
+          errors.push(`${product.cardName}: productMediaCreate failed`);
+        }
+      }
+
+      logger.info("Image repair complete", { setCode, repaired, failed });
+      return { repaired, failed, errors: errors.slice(0, 50) };
+    }),
+
   /** Scan all imported sets for completeness summary */
   scanAll: protectedClientProcedure.query(async ({ ctx }) => {
     const audits = await ctx.prisma.setAudit.findMany({

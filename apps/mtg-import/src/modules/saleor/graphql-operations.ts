@@ -99,6 +99,18 @@ export const PRODUCT_BY_SLUG_QUERY = gql`
   }
 `;
 
+export const PRODUCT_METADATA_QUERY = gql`
+  query ProductMetadata($id: ID!) {
+    product(id: $id) {
+      metadata {
+        key
+        value
+      }
+    }
+  }
+`;
+
+
 export const PRODUCTS_BY_METADATA_QUERY = gql`
   query ProductsByMetadata($filter: ProductFilterInput!, $channel: String!, $first: Int!) {
     products(first: $first, filter: $filter, channel: $channel) {
@@ -340,6 +352,22 @@ export const WAREHOUSE_CREATE_MUTATION = gql`
   }
 `;
 
+export const PRODUCT_MEDIA_CREATE_MUTATION = gql`
+  mutation ProductMediaCreate($input: ProductMediaCreateInput!) {
+    productMediaCreate(input: $input) {
+      media {
+        id
+        url
+      }
+      errors {
+        message
+        code
+        field
+      }
+    }
+  }
+`;
+
 export const PRODUCT_ATTRIBUTE_ASSIGN_MUTATION = gql`
   mutation ProductAttributeAssign(
     $productTypeId: ID!
@@ -479,6 +507,18 @@ export interface ProductAttributeAssignResult {
     field: string | null;
     message: string | null;
     code: string;
+  }>;
+}
+
+export interface ProductMediaCreateResult {
+  media: {
+    id: string;
+    url: string;
+  } | null;
+  errors: Array<{
+    message: string | null;
+    code: string;
+    field: string | null;
   }>;
 }
 

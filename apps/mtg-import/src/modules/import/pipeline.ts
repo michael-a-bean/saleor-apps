@@ -1,11 +1,12 @@
 /**
  * Import pipeline: converts Scryfall cards → Saleor products with variants.
  *
- * For each card:
- *   1. Build product with 23 attributes + description + media
+ * Phase 1 (this module):
+ *   1. Build product with 23 attributes + description (NO media — deferred to Phase 2)
  *   2. Generate variants (5 conditions × N finishes) with SKUs
  *   3. Set channel listings with price_amount = discounted_price_amount (critical!)
- *   4. Batch into productBulkCreate calls (50 products per mutation)
+ *   4. Store scryfall_image_url in metadata for Phase 2 image attachment
+ *   5. Skip stock entries when trackInventory=false (no zero-qty waste)
  */
 
 import { createLogger } from "@/lib/logger";
@@ -83,8 +84,8 @@ export function cardToProductInput(
   // EditorJS description
   const description = buildDescription(card);
 
-  // Media (card image)
-  const media = buildMedia(card);
+  // Image URL stored in metadata for Phase 2 attachment (not in bulk create)
+  const imageUrl = getCardImageUri(card, "large");
 
   // Channel listings at product level (visibility)
   const channelListings = context.channels.map((ch) => ({
@@ -108,12 +109,13 @@ export function cardToProductInput(
     category: context.category.id,
     attributes,
     channelListings,
-    media,
+    media: [],
     variants,
     metadata: [
       { key: "scryfall_id", value: card.id },
       { key: "scryfall_uri", value: card.scryfall_uri },
       { key: "set_code", value: card.set },
+      ...(imageUrl ? [{ key: "scryfall_image_url", value: imageUrl }] : []),
     ],
   };
 }
@@ -166,10 +168,12 @@ function buildVariants(
         trackInventory,
         attributes: variantAttrs,
         channelListings: buildVariantChannelListings(context.channels, price, costRatio),
-        stocks: warehouses.map((wh) => ({
-          warehouse: wh.id,
-          quantity: 0,
-        })),
+        stocks: trackInventory
+          ? warehouses.map((wh) => ({
+              warehouse: wh.id,
+              quantity: 0,
+            }))
+          : [],
       });
     }
   }
@@ -241,17 +245,6 @@ function buildDescription(card: ScryfallCard): { blocks: Array<Record<string, un
   }
 
   return { blocks };
-}
-
-/** Build media input from card image */
-function buildMedia(card: ScryfallCard): Array<Record<string, unknown>> {
-  const imageUrl = getCardImageUri(card, "large");
-  if (!imageUrl) return [];
-
-  return [{
-    mediaUrl: imageUrl,
-    alt: card.name.substring(0, 250),
-  }];
 }
 
 /** Condition code → full display name */

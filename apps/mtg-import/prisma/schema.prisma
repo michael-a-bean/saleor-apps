@@ -108,8 +108,9 @@ model ImportedProduct {
   variantCount    Int    @default(15) // Number of variants created (5 conditions x 3 finishes)
 
   // Status
-  success      Boolean @default(true)
-  errorMessage String?
+  success       Boolean @default(true)
+  errorMessage  String?
+  mediaAttached Boolean @default(false)
 
   createdAt DateTime @default(now())
 

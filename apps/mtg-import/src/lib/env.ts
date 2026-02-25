@@ -40,6 +40,9 @@ export const env = createEnv({
     SECRET_KEY: isBuilding ? z.string().optional() : z.string().min(32),
     CRON_SECRET: z.string().optional(),
 
+    // Orphan recovery
+    ORPHAN_JOB_THRESHOLD_MINUTES: z.coerce.number().optional().default(10),
+
     // Observability
     OTEL_ACCESS_TOKEN: z.string().optional(),
     OTEL_ENABLED: booleanSchema.optional().default("false"),
@@ -79,6 +82,7 @@ export const env = createEnv({
     SCRYFALL_CONTACT_EMAIL: process.env.SCRYFALL_CONTACT_EMAIL,
     SECRET_KEY: process.env.SECRET_KEY,
     CRON_SECRET: process.env.CRON_SECRET,
+    ORPHAN_JOB_THRESHOLD_MINUTES: process.env.ORPHAN_JOB_THRESHOLD_MINUTES,
     OTEL_ACCESS_TOKEN: process.env.OTEL_ACCESS_TOKEN,
     OTEL_ENABLED: process.env.OTEL_ENABLED,
     OTEL_SERVICE_NAME: process.env.OTEL_SERVICE_NAME,

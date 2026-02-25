@@ -1335,6 +1335,8 @@ async function startJobProcessing(
       mtgjsonBulkManager: mtgjsonBulk,
       prisma,
       gqlClient,
+      batchSize: env.IMPORT_BATCH_SIZE,
+      concurrency: env.IMPORT_CONCURRENCY,
     });
 
     activeProcessors.set(jobId, processor);

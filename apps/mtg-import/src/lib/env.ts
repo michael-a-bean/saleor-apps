@@ -40,6 +40,10 @@ export const env = createEnv({
     SECRET_KEY: isBuilding ? z.string().optional() : z.string().min(32),
     CRON_SECRET: z.string().optional(),
 
+    // Import tuning (scale with RDS capacity)
+    IMPORT_BATCH_SIZE: z.coerce.number().optional().default(25),
+    IMPORT_CONCURRENCY: z.coerce.number().optional().default(3),
+
     // Orphan recovery
     ORPHAN_JOB_THRESHOLD_MINUTES: z.coerce.number().optional().default(10),
 
@@ -82,6 +86,8 @@ export const env = createEnv({
     SCRYFALL_CONTACT_EMAIL: process.env.SCRYFALL_CONTACT_EMAIL,
     SECRET_KEY: process.env.SECRET_KEY,
     CRON_SECRET: process.env.CRON_SECRET,
+    IMPORT_BATCH_SIZE: process.env.IMPORT_BATCH_SIZE,
+    IMPORT_CONCURRENCY: process.env.IMPORT_CONCURRENCY,
     ORPHAN_JOB_THRESHOLD_MINUTES: process.env.ORPHAN_JOB_THRESHOLD_MINUTES,
     OTEL_ACCESS_TOKEN: process.env.OTEL_ACCESS_TOKEN,
     OTEL_ENABLED: process.env.OTEL_ENABLED,

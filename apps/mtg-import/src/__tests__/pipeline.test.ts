@@ -224,8 +224,15 @@ describe("cardToProductInput", () => {
     }
   });
 
-  it("sets initial stock to 0 for warehouse", () => {
+  it("omits stocks when trackInventory is false (default)", () => {
     const input = cardToProductInput(mockCard, mockContext, attrIdMap);
+    for (const variant of input.variants) {
+      expect(variant.stocks).toHaveLength(0);
+    }
+  });
+
+  it("sets initial stock to 0 for warehouse when trackInventory is true", () => {
+    const input = cardToProductInput(mockCard, mockContext, attrIdMap, { trackInventory: true });
     for (const variant of input.variants) {
       expect(variant.stocks).toHaveLength(1);
       expect(variant.stocks[0].warehouse).toBe("wh-1");

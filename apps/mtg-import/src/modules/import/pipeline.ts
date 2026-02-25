@@ -1,12 +1,11 @@
 /**
  * Import pipeline: converts Scryfall cards → Saleor products with variants.
  *
- * Phase 1 (this module):
- *   1. Build product with 23 attributes + description (NO media — deferred to Phase 2)
+ * For each card:
+ *   1. Build product with 23 attributes + description + media
  *   2. Generate variants (5 conditions × N finishes) with SKUs
  *   3. Set channel listings with price_amount = discounted_price_amount (critical!)
- *   4. Store scryfall_image_url in metadata for Phase 2 image attachment
- *   5. Skip stock entries when trackInventory=false (no zero-qty waste)
+ *   4. Skip stock entries when trackInventory=false (no zero-qty waste)
  */
 
 import { createLogger } from "@/lib/logger";
@@ -84,8 +83,11 @@ export function cardToProductInput(
   // EditorJS description
   const description = buildDescription(card);
 
-  // Image URL stored in metadata for Phase 2 attachment (not in bulk create)
+  // Media (card image) — included inline in bulk create
   const imageUrl = getCardImageUri(card, "large");
+  const media = imageUrl
+    ? [{ mediaUrl: imageUrl, alt: card.name.substring(0, 250) }]
+    : [];
 
   // Channel listings at product level (visibility)
   const channelListings = context.channels.map((ch) => ({
@@ -109,13 +111,12 @@ export function cardToProductInput(
     category: context.category.id,
     attributes,
     channelListings,
-    media: [],
+    media,
     variants,
     metadata: [
       { key: "scryfall_id", value: card.id },
       { key: "scryfall_uri", value: card.scryfall_uri },
       { key: "set_code", value: card.set },
-      ...(imageUrl ? [{ key: "scryfall_image_url", value: imageUrl }] : []),
     ],
   };
 }

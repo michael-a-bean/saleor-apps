@@ -23,7 +23,7 @@ import { cardToProductInput, batchCards, type PipelineOptions, DEFAULT_CONDITION
 const logger = createLogger("JobProcessor");
 
 const DEFAULT_BATCH_SIZE = 25;
-const CHECKPOINT_INTERVAL = 100;
+const DEFAULT_CONCURRENCY = 3;
 
 export interface ProcessorConfig {
   scryfallClient: ScryfallClient;
@@ -31,6 +31,8 @@ export interface ProcessorConfig {
   prisma: PrismaClient;
   gqlClient: Client;
   batchSize?: number;
+  /** Number of concurrent productBulkCreate calls (default: 3) */
+  concurrency?: number;
   /** Optional MTGJSON fallback for when Scryfall is unavailable */
   mtgjsonBulkManager?: MtgjsonBulkDataManager;
   /** Optional pre-built import client (for testing) */
@@ -51,6 +53,7 @@ export class JobProcessor {
   private readonly prisma: PrismaClient;
   private readonly saleor: SaleorImportClient;
   private readonly batchSize: number;
+  private readonly concurrency: number;
   private readonly mtgjsonBulk: MtgjsonBulkDataManager | null;
   private abortController: AbortController | null = null;
 
@@ -60,6 +63,7 @@ export class JobProcessor {
     this.prisma = config.prisma;
     this.saleor = config.saleorImportClient ?? new SaleorImportClient(config.gqlClient);
     this.batchSize = config.batchSize ?? DEFAULT_BATCH_SIZE;
+    this.concurrency = config.concurrency ?? DEFAULT_CONCURRENCY;
     this.mtgjsonBulk = config.mtgjsonBulkManager ?? null;
   }
 
@@ -120,20 +124,25 @@ export class JobProcessor {
         type: job.type,
         setCode: job.setCode,
         checkpoint: job.lastCheckpoint,
+        batchSize: this.batchSize,
+        concurrency: this.concurrency,
       });
 
       // Get card stream based on job type
       const cardStream = this.getCardStream(job);
 
-      // Process cards in batches
-      let batch: ScryfallCard[] = [];
+      // Process cards in concurrent batch groups
+      let currentBatch: ScryfallCard[] = [];
+      const pendingBatches: ScryfallCard[][] = [];
       let totalCards = 0;
       const checkpoint = job.lastCheckpoint ? parseInt(job.lastCheckpoint, 10) : 0;
       let skipped = 0;
+      let aborted = false;
 
       for await (const card of cardStream) {
         if (this.abortController.signal.aborted) {
           logger.info("Job aborted", { jobId: job.id });
+          aborted = true;
           break;
         }
 
@@ -148,28 +157,38 @@ export class JobProcessor {
         // Skip digital-only and non-paper cards
         if (!retailPaperFilter(card)) continue;
 
-        batch.push(card);
+        currentBatch.push(card);
 
-        if (batch.length >= this.batchSize) {
-          await this.processBatch(
-            batch,
-            job,
-            importContext,
-            attributeIdMap,
-            result,
-            pipelineOptions
-          );
-          batch = [];
+        if (currentBatch.length >= this.batchSize) {
+          pendingBatches.push(currentBatch);
+          currentBatch = [];
 
-          // Checkpoint every N cards
-          if (result.cardsProcessed % CHECKPOINT_INTERVAL < this.batchSize) {
+          // When we've collected enough batches, process them concurrently
+          if (pendingBatches.length >= this.concurrency) {
+            await this.processBatchGroup(
+              pendingBatches,
+              job,
+              importContext,
+              attributeIdMap,
+              result,
+              pipelineOptions
+            );
+            pendingBatches.length = 0;
+
+            // Checkpoint after each batch group completes
             await this.saveCheckpoint(job.id, totalCards, result);
+
+            // Check abort after batch group (SIGTERM may have arrived during processing)
+            if (this.abortController.signal.aborted) {
+              aborted = true;
+              break;
+            }
           }
         }
       }
 
       // If aborted (e.g. SIGTERM), save checkpoint and mark as CANCELLED
-      if (this.abortController.signal.aborted) {
+      if (aborted) {
         await this.saveCheckpoint(job.id, totalCards, result);
         await this.prisma.importJob.update({
           where: { id: job.id },
@@ -194,9 +213,19 @@ export class JobProcessor {
         return result;
       }
 
-      // Process remaining cards
-      if (batch.length > 0) {
-        await this.processBatch(batch, job, importContext, attributeIdMap, result, pipelineOptions);
+      // Process remaining batches (less than concurrency group + partial batch)
+      if (currentBatch.length > 0) {
+        pendingBatches.push(currentBatch);
+      }
+      if (pendingBatches.length > 0) {
+        await this.processBatchGroup(
+          pendingBatches,
+          job,
+          importContext,
+          attributeIdMap,
+          result,
+          pipelineOptions
+        );
       }
 
       // Mark job complete
@@ -368,14 +397,61 @@ export class JobProcessor {
     }
   }
 
-  private async processBatch(
-    cards: ScryfallCard[],
+  /**
+   * Process multiple batches concurrently.
+   * Each batch runs its own productBulkCreate call in parallel.
+   * Results are aggregated after all batches complete.
+   */
+  private async processBatchGroup(
+    batches: ScryfallCard[][],
     job: ImportJob,
     importContext: Awaited<ReturnType<SaleorImportClient["resolveImportContext"]>>,
     attributeIdMap: Map<string, string>,
     result: ProcessResult,
     pipelineOptions: PipelineOptions = {}
   ): Promise<void> {
+    const batchPromises = batches.map((batch) =>
+      this.processBatch(batch, job, importContext, attributeIdMap, pipelineOptions)
+    );
+
+    const batchResults = await Promise.all(batchPromises);
+
+    // Aggregate results sequentially (single-threaded, no race condition)
+    for (const br of batchResults) {
+      result.cardsProcessed += br.cardsProcessed;
+      result.variantsCreated += br.variantsCreated;
+      result.errors += br.errors;
+      result.skipped += br.skipped;
+      result.errorLog.push(...br.errorLog);
+    }
+
+    logger.info("Batch group processed", {
+      jobId: job.id,
+      batchCount: batches.length,
+      totalProcessed: result.cardsProcessed,
+      totalErrors: result.errors,
+    });
+  }
+
+  /**
+   * Process a single batch: convert cards, call productBulkCreate, record results.
+   * Returns a local result (not mutating shared state) for safe concurrent use.
+   */
+  private async processBatch(
+    cards: ScryfallCard[],
+    job: ImportJob,
+    importContext: Awaited<ReturnType<SaleorImportClient["resolveImportContext"]>>,
+    attributeIdMap: Map<string, string>,
+    pipelineOptions: PipelineOptions = {}
+  ): Promise<ProcessResult> {
+    const localResult: ProcessResult = {
+      cardsProcessed: 0,
+      variantsCreated: 0,
+      errors: 0,
+      skipped: 0,
+      errorLog: [],
+    };
+
     try {
       // Convert cards to product inputs
       const productInputs = cards.map((card) =>
@@ -385,48 +461,50 @@ export class JobProcessor {
       // Execute bulk create
       const createResult = await this.saleor.bulkCreateProducts(productInputs);
 
-      // Track results
+      // Build all Prisma upsert operations, then execute in a single transaction
+      const upsertOps: Array<ReturnType<typeof this.prisma.importedProduct.upsert>> = [];
+
       for (let i = 0; i < createResult.results.length; i++) {
         const row = createResult.results[i];
         const card = cards[i];
 
         if (row.product) {
-          result.cardsProcessed++;
-          result.variantsCreated += row.product.variants.length;
+          localResult.cardsProcessed++;
+          localResult.variantsCreated += row.product.variants.length;
 
-          // Record imported product (upsert to handle backfill of previously failed cards)
-          await this.prisma.importedProduct.upsert({
-            where: {
-              scryfallId_setCode: { scryfallId: card.id, setCode: card.set },
-            },
-            update: {
-              importJobId: job.id,
-              scryfallUri: card.scryfall_uri,
-              cardName: card.name.substring(0, 250),
-              collectorNumber: card.collector_number,
-              rarity: card.rarity,
-              saleorProductId: row.product.id,
-              variantCount: row.product.variants.length,
-              success: true,
-              errorMessage: null,
-            },
-            create: {
-              importJobId: job.id,
-              scryfallId: card.id,
-              scryfallUri: card.scryfall_uri,
-              cardName: card.name.substring(0, 250),
-              setCode: card.set,
-              collectorNumber: card.collector_number,
-              rarity: card.rarity,
-              saleorProductId: row.product.id,
-              variantCount: row.product.variants.length,
-              success: true,
-            },
-          });
+          upsertOps.push(
+            this.prisma.importedProduct.upsert({
+              where: {
+                scryfallId_setCode: { scryfallId: card.id, setCode: card.set },
+              },
+              update: {
+                importJobId: job.id,
+                scryfallUri: card.scryfall_uri,
+                cardName: card.name.substring(0, 250),
+                collectorNumber: card.collector_number,
+                rarity: card.rarity,
+                saleorProductId: row.product.id,
+                variantCount: row.product.variants.length,
+                success: true,
+                errorMessage: null,
+              },
+              create: {
+                importJobId: job.id,
+                scryfallId: card.id,
+                scryfallUri: card.scryfall_uri,
+                cardName: card.name.substring(0, 250),
+                setCode: card.set,
+                collectorNumber: card.collector_number,
+                rarity: card.rarity,
+                saleorProductId: row.product.id,
+                variantCount: row.product.variants.length,
+                success: true,
+              },
+            })
+          );
         } else if (this.isSlugDuplicateError(row.errors)) {
-          // Product already exists in Saleor — treat as successful (idempotent retry)
-          result.cardsProcessed++;
-          result.skipped++;
+          localResult.cardsProcessed++;
+          localResult.skipped++;
 
           logger.debug("Product already exists, skipping", {
             card: card.name,
@@ -434,76 +512,87 @@ export class JobProcessor {
             collector: card.collector_number,
           });
 
-          await this.prisma.importedProduct.upsert({
-            where: {
-              scryfallId_setCode: { scryfallId: card.id, setCode: card.set },
-            },
-            update: {
-              importJobId: job.id,
-              cardName: card.name.substring(0, 250),
-              collectorNumber: card.collector_number,
-              rarity: card.rarity,
-              saleorProductId: "existing",
-              success: true,
-              errorMessage: "Already exists in Saleor (duplicate slug)",
-            },
-            create: {
-              importJobId: job.id,
-              scryfallId: card.id,
-              cardName: card.name.substring(0, 250),
-              setCode: card.set,
-              collectorNumber: card.collector_number,
-              rarity: card.rarity,
-              saleorProductId: "existing",
-              success: true,
-              errorMessage: "Already exists in Saleor (duplicate slug)",
-            },
-          });
+          upsertOps.push(
+            this.prisma.importedProduct.upsert({
+              where: {
+                scryfallId_setCode: { scryfallId: card.id, setCode: card.set },
+              },
+              update: {
+                importJobId: job.id,
+                cardName: card.name.substring(0, 250),
+                collectorNumber: card.collector_number,
+                rarity: card.rarity,
+                saleorProductId: "existing",
+                success: true,
+                errorMessage: "Already exists in Saleor (duplicate slug)",
+              },
+              create: {
+                importJobId: job.id,
+                scryfallId: card.id,
+                cardName: card.name.substring(0, 250),
+                setCode: card.set,
+                collectorNumber: card.collector_number,
+                rarity: card.rarity,
+                saleorProductId: "existing",
+                success: true,
+                errorMessage: "Already exists in Saleor (duplicate slug)",
+              },
+            })
+          );
         } else {
-          result.errors++;
+          localResult.errors++;
           const errorMsg = row.errors.map((e) => e.message).join("; ");
-          result.errorLog.push(`${card.name} [${card.set}#${card.collector_number}]: ${errorMsg}`);
+          localResult.errorLog.push(`${card.name} [${card.set}#${card.collector_number}]: ${errorMsg}`);
 
-          await this.prisma.importedProduct.upsert({
-            where: {
-              scryfallId_setCode: { scryfallId: card.id, setCode: card.set },
-            },
-            update: {
-              importJobId: job.id,
-              cardName: card.name.substring(0, 250),
-              collectorNumber: card.collector_number,
-              rarity: card.rarity,
-              saleorProductId: "",
-              success: false,
-              errorMessage: errorMsg.substring(0, 1000),
-            },
-            create: {
-              importJobId: job.id,
-              scryfallId: card.id,
-              cardName: card.name.substring(0, 250),
-              setCode: card.set,
-              collectorNumber: card.collector_number,
-              rarity: card.rarity,
-              saleorProductId: "",
-              success: false,
-              errorMessage: errorMsg.substring(0, 1000),
-            },
-          });
+          upsertOps.push(
+            this.prisma.importedProduct.upsert({
+              where: {
+                scryfallId_setCode: { scryfallId: card.id, setCode: card.set },
+              },
+              update: {
+                importJobId: job.id,
+                cardName: card.name.substring(0, 250),
+                collectorNumber: card.collector_number,
+                rarity: card.rarity,
+                saleorProductId: "",
+                success: false,
+                errorMessage: errorMsg.substring(0, 1000),
+              },
+              create: {
+                importJobId: job.id,
+                scryfallId: card.id,
+                cardName: card.name.substring(0, 250),
+                setCode: card.set,
+                collectorNumber: card.collector_number,
+                rarity: card.rarity,
+                saleorProductId: "",
+                success: false,
+                errorMessage: errorMsg.substring(0, 1000),
+              },
+            })
+          );
         }
+      }
+
+      // Execute all upserts in a single transaction
+      if (upsertOps.length > 0) {
+        await this.prisma.$transaction(upsertOps);
       }
 
       logger.info("Batch processed", {
         jobId: job.id,
         batchSize: cards.length,
-        processed: result.cardsProcessed,
-        errors: result.errors,
+        processed: localResult.cardsProcessed,
+        errors: localResult.errors,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      result.errors += cards.length;
-      result.errorLog.push(`Batch error (${cards.length} cards): ${message}`);
+      localResult.errors += cards.length;
+      localResult.errorLog.push(`Batch error (${cards.length} cards): ${message}`);
       logger.error("Batch processing failed", { jobId: job.id, error: message });
     }
+
+    return localResult;
   }
 
   private async saveCheckpoint(

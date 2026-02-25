@@ -176,6 +176,7 @@ function createMocks(cards: ScryfallCard[] = []) {
     importSettings: {
       findUnique: vi.fn().mockResolvedValue(null),
     },
+    $transaction: vi.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
   };
 
   const mockGqlClient = {};

@@ -289,3 +289,26 @@ export function retailSetFilter(card: ScryfallCard): boolean {
 export function retailPaperFilter(card: ScryfallCard): boolean {
   return paperCardFilter(card) && retailSetFilter(card);
 }
+
+// --- Configurable filter for settings-driven imports ---
+
+export interface CardFilterOptions {
+  physicalOnly: boolean;
+  includeOversized: boolean;
+  includeTokens: boolean;
+  importableSetTypes: Set<string>;
+}
+
+/** Create a card filter from user-configured settings */
+export function createCardFilter(options: CardFilterOptions): (card: ScryfallCard) => boolean {
+  return (card) => {
+    if (options.physicalOnly) {
+      if (card.digital) return false;
+      if (!card.games.includes("paper")) return false;
+    }
+    if (!options.includeOversized && card.oversized) return false;
+    if (!options.includeTokens && (card.layout === "token" || card.layout === "emblem" || card.layout === "planar")) return false;
+    if (!options.importableSetTypes.has(card.set_type)) return false;
+    return true;
+  };
+}

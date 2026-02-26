@@ -4,8 +4,8 @@ export type { ScryfallClientOptions } from "./client";
 export { RateLimiter } from "./rate-limiter";
 export type { RateLimiterOptions } from "./rate-limiter";
 
-export { BulkDataManager, paperCardFilter, retailSetFilter, retailPaperFilter, IMPORTABLE_SET_TYPES } from "./bulk-data";
-export type { BulkDataOptions } from "./bulk-data";
+export { BulkDataManager, paperCardFilter, retailSetFilter, retailPaperFilter, IMPORTABLE_SET_TYPES, createCardFilter } from "./bulk-data";
+export type { BulkDataOptions, CardFilterOptions } from "./bulk-data";
 
 export {
   CONDITIONS,

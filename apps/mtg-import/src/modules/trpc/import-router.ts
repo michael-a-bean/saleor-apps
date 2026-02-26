@@ -17,7 +17,7 @@ import type { ImportJobStatus, ImportJobType } from "@/generated/prisma";
 
 import { createLogger } from "@/lib/logger";
 import { env } from "@/lib/env";
-import { ScryfallClient, BulkDataManager, retailPaperFilter } from "../scryfall";
+import { ScryfallClient, BulkDataManager, createCardFilter } from "../scryfall";
 import { JobProcessor } from "../import/job-processor";
 import { ATTRIBUTE_DEFS } from "../import/attribute-map";
 import { SaleorImportClient } from "../saleor";
@@ -534,6 +534,17 @@ const setsRouter = router({
         }
       }
 
+      // Load settings to build configurable card filter
+      const settings = await ctx.prisma.importSettings.findUnique({
+        where: { installationId: ctx.installationId },
+      });
+      const cardFilter = createCardFilter({
+        physicalOnly: settings?.physicalOnly ?? true,
+        includeOversized: settings?.includeOversized ?? false,
+        includeTokens: settings?.includeTokens ?? false,
+        importableSetTypes: new Set(settings?.importableSetTypes ?? ["core", "expansion", "masters", "draft_innovation", "commander", "starter", "funny"]),
+      });
+
       // Search Scryfall for all cards in this set (paginated API, much faster than bulk data)
       const client = getScryfallClient();
       const missingCards: Array<{
@@ -546,7 +557,7 @@ const setsRouter = router({
 
       try {
         for await (const card of client.searchAll(`set:${setCode}`, { unique: "prints" })) {
-          if (!retailPaperFilter(card)) continue;
+          if (!cardFilter(card)) continue;
           scryfallTotal++;
 
           if (!successfulIds.has(card.id)) {

@@ -207,6 +207,9 @@ const SettingsPage: NextPage = () => {
   const [isAvailableForPurchase, setIsAvailableForPurchase] = useState(true);
   const [trackInventory, setTrackInventory] = useState(false);
   const [importableSetTypes, setImportableSetTypes] = useState<string[]>([]);
+  const [physicalOnly, setPhysicalOnly] = useState(true);
+  const [includeOversized, setIncludeOversized] = useState(false);
+  const [includeTokens, setIncludeTokens] = useState(false);
   const [dirty, setDirty] = useState(false);
 
   // Inline create form states
@@ -235,6 +238,9 @@ const SettingsPage: NextPage = () => {
       setIsAvailableForPurchase(s.isAvailableForPurchase);
       setTrackInventory(s.trackInventory);
       setImportableSetTypes(s.importableSetTypes);
+      setPhysicalOnly(s.physicalOnly);
+      setIncludeOversized(s.includeOversized);
+      setIncludeTokens(s.includeTokens);
     }
   }, [settingsQuery.data]);
 
@@ -258,6 +264,9 @@ const SettingsPage: NextPage = () => {
       isAvailableForPurchase,
       trackInventory,
       importableSetTypes,
+      physicalOnly,
+      includeOversized,
+      includeTokens,
     });
   };
 
@@ -470,18 +479,34 @@ const SettingsPage: NextPage = () => {
           {/* Section 4: Import Behavior */}
           <Layout.AppSection
             heading="Import Behavior"
-            sideContent={<Text>Which set types to include in the importable sets list.</Text>}
+            sideContent={<Text>Which set types and card types to include during import.</Text>}
           >
             <Layout.AppSectionCard>
-              <Box padding={4} display="flex" flexWrap="wrap" gap={2}>
-                {ALL_SET_TYPES.map((type) => (
-                  <CheckboxItem
-                    key={type}
-                    label={type.replace(/_/g, " ")}
-                    checked={importableSetTypes.includes(type)}
-                    onChange={() => toggleSetType(type)}
-                  />
-                ))}
+              <Box padding={4} display="flex" flexDirection="column" gap={4}>
+                {/* Card Filters */}
+                <Box>
+                  <Text fontWeight="bold" marginBottom={2}>Card Filters</Text>
+                  <Box display="flex" flexDirection="column" gap={2}>
+                    <CheckboxItem label="Physical cards only (exclude digital / non-paper)" checked={physicalOnly} onChange={(v) => { setPhysicalOnly(v); markDirty(); }} />
+                    <CheckboxItem label="Include oversized cards" checked={includeOversized} onChange={(v) => { setIncludeOversized(v); markDirty(); }} />
+                    <CheckboxItem label="Include tokens & emblems" checked={includeTokens} onChange={(v) => { setIncludeTokens(v); markDirty(); }} />
+                  </Box>
+                </Box>
+
+                {/* Set Types */}
+                <Box>
+                  <Text fontWeight="bold" marginBottom={2}>Importable Set Types</Text>
+                  <Box display="flex" flexWrap="wrap" gap={2}>
+                    {ALL_SET_TYPES.map((type) => (
+                      <CheckboxItem
+                        key={type}
+                        label={type.replace(/_/g, " ")}
+                        checked={importableSetTypes.includes(type)}
+                        onChange={() => toggleSetType(type)}
+                      />
+                    ))}
+                  </Box>
+                </Box>
               </Box>
             </Layout.AppSectionCard>
           </Layout.AppSection>

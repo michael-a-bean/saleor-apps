@@ -14,7 +14,8 @@ import type { Client } from "urql";
 
 import { createLogger } from "@/lib/logger";
 import type { ScryfallCard } from "../scryfall/types";
-import { ScryfallClient, BulkDataManager, retailPaperFilter } from "../scryfall";
+import { ScryfallClient, BulkDataManager, createCardFilter } from "../scryfall";
+import type { CardFilterOptions } from "../scryfall";
 import { MtgjsonBulkDataManager } from "../mtgjson";
 import { SaleorImportClient } from "../saleor";
 import { buildAttributeIdMap } from "./attribute-map";
@@ -120,6 +121,15 @@ export class JobProcessor {
       );
       const attributeIdMap = buildAttributeIdMap(importContext.productType.productAttributes);
 
+      // Build configurable card filter from settings
+      const cardFilterOptions: CardFilterOptions = {
+        physicalOnly: settings?.physicalOnly ?? true,
+        includeOversized: settings?.includeOversized ?? false,
+        includeTokens: settings?.includeTokens ?? false,
+        importableSetTypes: new Set(settings?.importableSetTypes ?? ["core", "expansion", "masters", "draft_innovation", "commander", "starter", "funny"]),
+      };
+      const cardFilter = createCardFilter(cardFilterOptions);
+
       // Build pipeline options from settings
       const pipelineOptions: PipelineOptions = {
         batchSize: this.batchSize,
@@ -175,8 +185,8 @@ export class JobProcessor {
           continue;
         }
 
-        // Skip digital-only and non-paper cards
-        if (!retailPaperFilter(card)) continue;
+        // Skip cards that don't match configured filters
+        if (!cardFilter(card)) continue;
 
         currentBatch.push(card);
 

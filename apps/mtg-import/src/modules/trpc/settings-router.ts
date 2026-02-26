@@ -50,6 +50,8 @@ const importSettingsSchema = z.object({
   trackInventory: z.boolean(),
   importableSetTypes: z.array(z.string()).min(1),
   physicalOnly: z.boolean(),
+  includeOversized: z.boolean(),
+  includeTokens: z.boolean(),
 });
 
 export const settingsRouter = router({

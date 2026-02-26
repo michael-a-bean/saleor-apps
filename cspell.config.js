@@ -91,6 +91,7 @@ export default {
     "backfill",
     "prerelease",
     "etched",
+    "cooldown",
   ],
   language: "en-US",
   useGitignore: true,

@@ -37,6 +37,12 @@ export interface ProcessorConfig {
   mtgjsonBulkManager?: MtgjsonBulkDataManager;
   /** Optional pre-built import client (for testing) */
   saleorImportClient?: SaleorImportClient;
+  /** Consecutive fully-failed batch groups before tripping (default: 5) */
+  circuitBreakerThreshold?: number;
+  /** Cooldown wait in ms between health check retries (default: 30000) */
+  circuitBreakerCooldownMs?: number;
+  /** Health check retries before failing the job (default: 3) */
+  circuitBreakerMaxRetries?: number;
 }
 
 export interface ProcessResult {
@@ -47,24 +53,39 @@ export interface ProcessResult {
   errorLog: string[];
 }
 
+const DEFAULT_CB_THRESHOLD = 5;
+const DEFAULT_CB_COOLDOWN_MS = 30_000;
+const DEFAULT_CB_MAX_RETRIES = 3;
+
 export class JobProcessor {
   private readonly scryfall: ScryfallClient;
   private readonly bulkData: BulkDataManager;
   private readonly prisma: PrismaClient;
+  private readonly gqlClient: Client;
   private readonly saleor: SaleorImportClient;
   private readonly batchSize: number;
   private readonly concurrency: number;
   private readonly mtgjsonBulk: MtgjsonBulkDataManager | null;
   private abortController: AbortController | null = null;
 
+  // Circuit breaker state
+  private consecutiveGroupFailures = 0;
+  private readonly cbThreshold: number;
+  private readonly cbCooldownMs: number;
+  private readonly cbMaxRetries: number;
+
   constructor(config: ProcessorConfig) {
     this.scryfall = config.scryfallClient;
     this.bulkData = config.bulkDataManager;
     this.prisma = config.prisma;
+    this.gqlClient = config.gqlClient;
     this.saleor = config.saleorImportClient ?? new SaleorImportClient(config.gqlClient);
     this.batchSize = config.batchSize ?? DEFAULT_BATCH_SIZE;
     this.concurrency = config.concurrency ?? DEFAULT_CONCURRENCY;
     this.mtgjsonBulk = config.mtgjsonBulkManager ?? null;
+    this.cbThreshold = config.circuitBreakerThreshold ?? DEFAULT_CB_THRESHOLD;
+    this.cbCooldownMs = config.circuitBreakerCooldownMs ?? DEFAULT_CB_COOLDOWN_MS;
+    this.cbMaxRetries = config.circuitBreakerMaxRetries ?? DEFAULT_CB_MAX_RETRIES;
   }
 
   /** Process a single import job */
@@ -165,6 +186,10 @@ export class JobProcessor {
 
           // When we've collected enough batches, process them concurrently
           if (pendingBatches.length >= this.concurrency) {
+            const errorsBefore = result.errors;
+            const processedBefore = result.cardsProcessed;
+            const groupCardCount = pendingBatches.reduce((sum, b) => sum + b.length, 0);
+
             await this.processBatchGroup(
               pendingBatches,
               job,
@@ -174,6 +199,30 @@ export class JobProcessor {
               pipelineOptions
             );
             pendingBatches.length = 0;
+
+            // Circuit breaker: detect if entire group failed
+            const groupErrors = result.errors - errorsBefore;
+            const groupProcessed = result.cardsProcessed - processedBefore;
+
+            if (groupProcessed === 0 && groupErrors >= groupCardCount) {
+              this.consecutiveGroupFailures++;
+              logger.warn("Batch group fully failed", {
+                jobId: job.id,
+                consecutiveFailures: this.consecutiveGroupFailures,
+                threshold: this.cbThreshold,
+              });
+            } else {
+              this.consecutiveGroupFailures = 0;
+            }
+
+            // Trip circuit breaker if threshold reached
+            if (this.consecutiveGroupFailures >= this.cbThreshold) {
+              const recovered = await this.circuitBreakerCooldown(job.id, totalCards, result);
+              if (!recovered) {
+                aborted = true;
+                break;
+              }
+            }
 
             // Checkpoint after each batch group completes
             await this.saveCheckpoint(job.id, totalCards, result);
@@ -230,6 +279,21 @@ export class JobProcessor {
 
       // Mark job complete
       const finalStatus = result.errors > 0 && result.cardsProcessed === 0 ? "FAILED" : "COMPLETED";
+
+      // Log error rate at warning level when significant
+      const totalAttempted = result.cardsProcessed + result.errors;
+      if (totalAttempted > 0) {
+        const errorRate = result.errors / totalAttempted;
+        if (errorRate > 0.10) {
+          logger.warn("High error rate on import job", {
+            jobId: job.id,
+            errorRate: Math.round(errorRate * 100),
+            errors: result.errors,
+            processed: result.cardsProcessed,
+            total: totalAttempted,
+          });
+        }
+      }
 
       await this.prisma.importJob.update({
         where: { id: job.id },
@@ -593,6 +657,93 @@ export class JobProcessor {
     }
 
     return localResult;
+  }
+
+  /**
+   * Circuit breaker cooldown: wait and retry with health checks.
+   * Returns true if API recovered, false if all retries exhausted.
+   */
+  private async circuitBreakerCooldown(
+    jobId: string,
+    totalProcessed: number,
+    result: ProcessResult
+  ): Promise<boolean> {
+    logger.warn("Circuit breaker tripped", {
+      jobId,
+      consecutiveFailures: this.consecutiveGroupFailures,
+      cooldownMs: this.cbCooldownMs,
+      maxRetries: this.cbMaxRetries,
+    });
+
+    for (let attempt = 1; attempt <= this.cbMaxRetries; attempt++) {
+      logger.info("Circuit breaker: waiting for cooldown", {
+        jobId,
+        attempt,
+        maxRetries: this.cbMaxRetries,
+        cooldownMs: this.cbCooldownMs,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, this.cbCooldownMs));
+
+      const healthy = await this.checkApiHealth();
+      if (healthy) {
+        logger.info("Circuit breaker: API recovered, resuming", {
+          jobId,
+          attempt,
+        });
+        this.consecutiveGroupFailures = 0;
+        return true;
+      }
+
+      logger.warn("Circuit breaker: health check failed", {
+        jobId,
+        attempt,
+        maxRetries: this.cbMaxRetries,
+      });
+    }
+
+    // All retries exhausted — save checkpoint and fail the job
+    logger.error("Circuit breaker: API unavailable after all retries, failing job", {
+      jobId,
+      totalRetries: this.cbMaxRetries,
+    });
+
+    await this.saveCheckpoint(jobId, totalProcessed, result);
+
+    await this.prisma.importJob.update({
+      where: { id: jobId },
+      data: {
+        status: "FAILED",
+        errorMessage: `Circuit breaker: API unavailable after ${this.cbMaxRetries} retries (${this.consecutiveGroupFailures} consecutive group failures)`,
+        cardsProcessed: result.cardsProcessed,
+        variantsCreated: result.variantsCreated,
+        errors: result.errors,
+        skipped: result.skipped,
+        errorLog: JSON.stringify(result.errorLog.slice(0, 100)),
+      },
+    });
+
+    this.abortController?.abort();
+    return false;
+  }
+
+  /** Lightweight health check — queries { shop { name } } with a 10s timeout */
+  private async checkApiHealth(): Promise<boolean> {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10_000);
+
+      const result = await this.gqlClient.query(
+        `query HealthCheck { shop { name } }`,
+        {},
+        { fetchOptions: { signal: controller.signal } }
+      );
+
+      clearTimeout(timeout);
+      return !result.error;
+    } catch {
+      return false;
+    }
   }
 
   private async saveCheckpoint(

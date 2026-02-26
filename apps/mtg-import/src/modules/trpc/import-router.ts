@@ -1337,6 +1337,9 @@ async function startJobProcessing(
       gqlClient,
       batchSize: env.IMPORT_BATCH_SIZE,
       concurrency: env.IMPORT_CONCURRENCY,
+      circuitBreakerThreshold: env.CIRCUIT_BREAKER_THRESHOLD,
+      circuitBreakerCooldownMs: env.CIRCUIT_BREAKER_COOLDOWN_MS,
+      circuitBreakerMaxRetries: env.CIRCUIT_BREAKER_MAX_RETRIES,
     });
 
     activeProcessors.set(jobId, processor);

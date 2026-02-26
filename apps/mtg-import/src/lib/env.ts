@@ -44,6 +44,11 @@ export const env = createEnv({
     IMPORT_BATCH_SIZE: z.coerce.number().optional().default(25),
     IMPORT_CONCURRENCY: z.coerce.number().optional().default(3),
 
+    // Circuit breaker (protects against sustained API failures during long imports)
+    CIRCUIT_BREAKER_THRESHOLD: z.coerce.number().optional().default(5),
+    CIRCUIT_BREAKER_COOLDOWN_MS: z.coerce.number().optional().default(30000),
+    CIRCUIT_BREAKER_MAX_RETRIES: z.coerce.number().optional().default(3),
+
     // Orphan recovery
     ORPHAN_JOB_THRESHOLD_MINUTES: z.coerce.number().optional().default(10),
 
@@ -88,6 +93,9 @@ export const env = createEnv({
     CRON_SECRET: process.env.CRON_SECRET,
     IMPORT_BATCH_SIZE: process.env.IMPORT_BATCH_SIZE,
     IMPORT_CONCURRENCY: process.env.IMPORT_CONCURRENCY,
+    CIRCUIT_BREAKER_THRESHOLD: process.env.CIRCUIT_BREAKER_THRESHOLD,
+    CIRCUIT_BREAKER_COOLDOWN_MS: process.env.CIRCUIT_BREAKER_COOLDOWN_MS,
+    CIRCUIT_BREAKER_MAX_RETRIES: process.env.CIRCUIT_BREAKER_MAX_RETRIES,
     ORPHAN_JOB_THRESHOLD_MINUTES: process.env.ORPHAN_JOB_THRESHOLD_MINUTES,
     OTEL_ACCESS_TOKEN: process.env.OTEL_ACCESS_TOKEN,
     OTEL_ENABLED: process.env.OTEL_ENABLED,

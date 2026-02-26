@@ -428,24 +428,33 @@ export class JobProcessor {
   }
 
   /**
-   * Stream cards from a set with MTGJSON fallback if Scryfall fails.
+   * Stream cards from a set via Scryfall search API (paginated, fast).
+   * Falls back to bulk data streaming if search fails, then to MTGJSON.
    */
   private async *streamSetWithFallback(setCode: string): AsyncGenerator<ScryfallCard> {
     try {
-      yield* this.bulkData.streamSet(setCode);
+      logger.info("Streaming set via Scryfall search API", { setCode });
+      yield* this.scryfall.searchAll(`set:${setCode}`, { unique: "prints" });
     } catch (error) {
-      if (this.mtgjsonBulk) {
-        const msg = error instanceof Error ? error.message : String(error);
-        logger.warn("Scryfall set stream failed, falling back to MTGJSON", { setCode, error: msg });
-        yield* this.mtgjsonBulk.streamSet(setCode);
-      } else {
-        throw error;
+      const msg = error instanceof Error ? error.message : String(error);
+      logger.warn("Scryfall search API failed, falling back to bulk data", { setCode, error: msg });
+      try {
+        yield* this.bulkData.streamSet(setCode);
+      } catch (bulkError) {
+        if (this.mtgjsonBulk) {
+          const bulkMsg = bulkError instanceof Error ? bulkError.message : String(bulkError);
+          logger.warn("Scryfall bulk stream also failed, falling back to MTGJSON", { setCode, error: bulkMsg });
+          yield* this.mtgjsonBulk.streamSet(setCode);
+        } else {
+          throw bulkError;
+        }
       }
     }
   }
 
   /**
    * Stream only missing/failed cards for a set (smart BACKFILL).
+   * Uses Scryfall search API for fast set-specific queries.
    * Queries ImportedProduct for successfully imported scryfallIds,
    * then yields only cards NOT in that set.
    */

@@ -19,10 +19,10 @@ import { createLogger } from "@/lib/logger";
 import { env } from "@/lib/env";
 import { ScryfallClient, BulkDataManager, createCardFilter } from "../scryfall";
 import { JobProcessor } from "../import/job-processor";
-import { ATTRIBUTE_DEFS } from "../import/attribute-map";
+import { ATTRIBUTE_DEFS, NEW_ATTRIBUTE_SLUGS } from "../import/attribute-map";
 import { SaleorImportClient } from "../saleor";
 import { MtgjsonBulkDataManager } from "../mtgjson";
-import { buildAttributeIdMap } from "../import/attribute-map";
+import { buildAttributeIdMap, buildProductAttributes } from "../import/attribute-map";
 import { protectedClientProcedure } from "./protected-client-procedure";
 import { router } from "./trpc-server";
 
@@ -1037,6 +1037,145 @@ const setsRouter = router({
       return {
         totalSets: audits.length,
         message: `Processing ${audits.length} sets in the background. Check logs for progress.`,
+      };
+    }),
+
+  /**
+   * Backfill the 7 new product-level attributes on existing imported products.
+   * Uses ImportedProduct table for scryfallId→saleorProductId mapping,
+   * streams Scryfall bulk data, and calls productBulkUpdate in batches.
+   * Fire-and-forget: returns immediately, processes in background.
+   */
+  backfillProductAttributes: protectedClientProcedure
+    .input(z.object({ setCode: z.string().min(2).max(10).optional() }))
+    .mutation(async ({ ctx, input }) => {
+      const saleor = new SaleorImportClient(ctx.apiClient!);
+
+      // Resolve product-level attribute IDs, filtered to only new slugs
+      const productType = await saleor.getProductType();
+      const fullAttrMap = buildAttributeIdMap(productType.productAttributes);
+      const attrMap = new Map<string, string>();
+      for (const slug of NEW_ATTRIBUTE_SLUGS) {
+        const id = fullAttrMap.get(slug);
+        if (id) attrMap.set(slug, id);
+      }
+
+      if (attrMap.size === 0) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: `None of the new attribute slugs found on product type. Run setupAttributes first. Expected: ${[...NEW_ATTRIBUTE_SLUGS].join(", ")}`,
+        });
+      }
+
+      // Build scryfallId → saleorProductId lookup from ImportedProduct
+      const setFilter = input.setCode ? { setCode: input.setCode.toLowerCase() } : {};
+      const imported = await ctx.prisma.importedProduct.findMany({
+        where: {
+          success: true,
+          importJob: { installationId: ctx.installationId },
+          ...setFilter,
+        },
+        select: { scryfallId: true, saleorProductId: true },
+      });
+
+      if (imported.length === 0) {
+        return {
+          totalProducts: 0,
+          message: "No imported products found matching criteria.",
+        };
+      }
+
+      const idMap = new Map<string, string>();
+      for (const row of imported) {
+        idMap.set(row.scryfallId, row.saleorProductId);
+      }
+
+      logger.info("Backfill product attributes starting", {
+        setCode: input.setCode ?? "ALL",
+        attributesMapped: attrMap.size,
+        importedProducts: idMap.size,
+      });
+
+      // Fire-and-forget background processing
+      const processInBackground = async () => {
+        const BATCH_SIZE = 25;
+        let batch: Array<{ id: string; input: Record<string, unknown> }> = [];
+        let batchesSent = 0;
+        let productsMatched = 0;
+        let productsSkipped = 0;
+        let totalErrors = 0;
+
+        const flushBatch = async () => {
+          if (batch.length === 0) return;
+          try {
+            await saleor.bulkUpdateProducts(batch);
+            batchesSent++;
+
+            if (batchesSent % 100 === 0) {
+              logger.info("Backfill product attrs progress", {
+                batchesSent,
+                productsMatched,
+                productsSkipped,
+                totalErrors,
+              });
+            }
+          } catch (err) {
+            totalErrors += batch.length;
+            logger.error("Backfill product attrs batch failed", {
+              batchNumber: batchesSent + 1,
+              batchSize: batch.length,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+          batch = [];
+        };
+
+        // Stream cards from Scryfall bulk data
+        const bulkData = new BulkDataManager({ client: getScryfallClient() });
+        const stream = input.setCode
+          ? bulkData.streamSet(input.setCode.toLowerCase())
+          : bulkData.streamCards();
+
+        for await (const card of stream) {
+          const saleorProductId = idMap.get(card.id);
+          if (!saleorProductId) {
+            productsSkipped++;
+            continue;
+          }
+
+          const attributes = buildProductAttributes(card, attrMap);
+          if (attributes.length === 0) continue;
+
+          batch.push({ id: saleorProductId, input: { attributes } });
+          productsMatched++;
+
+          if (batch.length >= BATCH_SIZE) {
+            await flushBatch();
+          }
+        }
+
+        // Flush remaining
+        await flushBatch();
+
+        logger.info("Backfill product attrs complete", {
+          setCode: input.setCode ?? "ALL",
+          productsMatched,
+          productsSkipped,
+          batchesSent,
+          totalErrors,
+        });
+      };
+
+      processInBackground().catch((err) => {
+        logger.error("Backfill product attrs background job failed", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+
+      return {
+        totalProducts: idMap.size,
+        attributeCount: attrMap.size,
+        message: `Processing ${idMap.size} products in background (${attrMap.size} attributes). Check logs for progress.`,
       };
     }),
 

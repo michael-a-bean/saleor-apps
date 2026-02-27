@@ -61,6 +61,20 @@ export function parseCardTypes(card: ScryfallCard): string[] {
 }
 
 /**
+ * The 7 attribute slugs added after the initial 73k+ product import.
+ * Used by backfillProductAttributes to update only these attributes on existing products.
+ */
+export const NEW_ATTRIBUTE_SLUGS = new Set([
+  "mtg-color-identity",
+  "mtg-colors",
+  "mtg-card-type",
+  "mtg-set-type",
+  "mtg-frame",
+  "mtg-border-color",
+  "is-oversized",
+]);
+
+/**
  * The 30 MTG card attributes.
  * Order: external IDs → card properties → multiselect fields → dropdowns → boolean flags
  */

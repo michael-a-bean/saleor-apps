@@ -1072,6 +1072,7 @@ const setsRouter = router({
       const imported = await ctx.prisma.importedProduct.findMany({
         where: {
           success: true,
+          saleorProductId: { not: "existing" },
           importJob: { installationId: ctx.installationId },
           ...setFilter,
         },

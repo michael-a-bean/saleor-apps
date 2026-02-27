@@ -105,6 +105,13 @@ const SetsPage: NextPage = () => {
     onError: (err) => notifyError("Fix all attrs failed", err.message),
   });
 
+  const backfillProductAttrsMutation = trpcClient.sets.backfillProductAttributes.useMutation({
+    onSuccess: (data) => {
+      notifySuccess("Product Attrs Backfill started", data.message);
+    },
+    onError: (err) => notifyError("Product attrs backfill failed", err.message),
+  });
+
   const rebuildAuditsMutation = trpcClient.sets.rebuildAudits.useMutation({
     onSuccess: (data) => {
       notifySuccess(
@@ -219,6 +226,15 @@ const SetsPage: NextPage = () => {
             {backfillAllAttrsMutation.isLoading
               ? "Fixing attrs..."
               : "Fix All Attrs"}
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => backfillProductAttrsMutation.mutate({})}
+            disabled={backfillProductAttrsMutation.isLoading}
+          >
+            {backfillProductAttrsMutation.isLoading
+              ? "Backfilling..."
+              : "Backfill Product Attrs"}
           </Button>
           {incompleteSets.length > 0 && (
             <Button

@@ -2,7 +2,7 @@
  * Import pipeline: converts Scryfall cards → Saleor products with variants.
  *
  * For each card:
- *   1. Build product with 23 attributes + description + media
+ *   1. Build product with 30 attributes + description + media
  *   2. Generate variants (5 conditions × N finishes) with SKUs
  *   3. Set channel listings with price_amount = discounted_price_amount (critical!)
  *   4. Skip stock entries when trackInventory=false (no zero-qty waste)
@@ -62,7 +62,7 @@ export type ProductInput = Record<string, any>;
  * Convert a Scryfall card to a Saleor ProductBulkCreateInput.
  *
  * Creates product with:
- * - 23 MTG attributes
+ * - 30 MTG attributes (including multiselect: color identity, colors, card type)
  * - EditorJS description (type line + oracle text)
  * - External image URL
  * - N variants (conditions × finishes) with channel listings

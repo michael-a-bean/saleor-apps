@@ -92,6 +92,7 @@ export default {
     "prerelease",
     "etched",
     "cooldown",
+    "supertypes",
   ],
   language: "en-US",
   useGitignore: true,

@@ -1,5 +1,105 @@
 # saleor-app-payment-stripe
 
+## 2.6.0
+
+### Minor Changes
+
+- fab1f78: Webhook responses now return plain text response to Saleor, so it should be properly displayed in dashboard "webhook errors". Previously app was returning `{"message": "..."}` which is not recognized shape officially by Saleor nor Dashboard - it was rendered like text anyway.
+
+### Patch Changes
+
+- 0484f64: Add error cause for verifyJwt failures on tRPC
+- 8cc005b: Updated aws-sdk packages and dynamodb-toolbox to latest versions
+- Updated dependencies [8cc005b]
+  - @saleor/app-problems@1.0.1
+
+## 2.5.1
+
+### Patch Changes
+
+- ddfa9593: Changed how generated graphql->typescript types work. Now only types that are directly or indirectly connected to written documents (mutations, queries) are generated
+
+## 2.5.0
+
+### Minor Changes
+
+- 9c3453dd: Added AppProblems support - now Stripe will report common issues (like invalid secrets) directly to Saleor and Dashboard will display them for the user
+
+### Patch Changes
+
+- cb9bd90f: Fixed issue when app was missing mapping for channel used in payment. Instead of throwing exception, app will now return responses to Saleor webhook with error message.
+- d9bb00f5: GraphQL schema has been refreshed to use latest 3.22 (this updates schema but does not change which APIs are executed)
+- c1cbffb4: Applied "consistent imports" rule from ESLint to ensure type-only imports are marked with `import type` clause. This should improve tree shaking and reduce side effects
+- 041e6065: Verify if webhooks are connected to the original app installation that executed the payment intent
+- dec95470: Removed nested graphql.schema files for each app/package and added root schema. Now all packages have symlink pointing to the same file.
+- Updated dependencies [f0d36e14]
+- Updated dependencies [f0d36e14]
+  - @saleor/apps-shared@1.14.2
+  - @saleor/app-problems@1.0.0
+  - @saleor/apps-trpc@4.0.4
+  - @saleor/apps-logger@1.6.3
+  - @saleor/apps-otel@2.4.0
+  - @saleor/react-hook-form-macaw@0.2.16
+  - @saleor/apps-ui@1.3.2
+
+## 2.4.3
+
+### Patch Changes
+
+- e8996bf7: Return better error message to initializeSession CHARGE_FAILURE - previously error was only returned to storefront (inside "data"), not also visible in the dashboard
+
+## 2.4.2
+
+### Patch Changes
+
+- d7ce7f67: Added client-side error capturing so client exceptions are reported to Sentry.
+
+## 2.4.1
+
+### Patch Changes
+
+- 07057788: Update DynamoDB/AWS & Toolbox dependencies
+
+## 2.4.0
+
+### Minor Changes
+
+- cf9c50af: Added support for _Link_ payment method. Storefront should include `link` payment method in mutation `data`
+- a628f53f: Now app will cancel Payment Intent (on Stripe side) when it fails to finish saving transaction on app's side (record in DynamoDB). That behavior was partially broken and webhooks couldn't be resolved. Now if DynamoDB write fails, app cleans the orphaned intent. This happens on TransactionInitializeSession
+
+### Patch Changes
+
+- d5d7a4fe: Introduced lib t3-oss/env, which adds build-time env variables validation. Now all env variables are statically declared and exposed type-safe way
+- 6e5f69c5: Added max DynamoDB connection and request limits (2s for connection, 5s for request), so in case of downtime, app will terminate earlier
+
+## 2.3.12
+
+### Patch Changes
+
+- 560c3de4: Added logging to DynamoDB APL for better debugging and error visibility.
+
+## 2.3.11
+
+### Patch Changes
+
+- ea7fad59: Changed errors that were printed due to API rejection to be warnings, because they are usually bad payload from storefront
+- 2a4f27ad: Fixed how AWS sdk is initialized by explicitly passing credentials. This is caused by Vercel issue, which started to implicitly override some of our credentials by injecting their own.
+
+## 2.3.10
+
+### Patch Changes
+
+- be1fcf20: Fixed race condition in transaction recording that caused `ConditionalCheckFailedException` errors.
+  Previously, when two concurrent requests with the same idempotency key arrived (e.g., user clicking pay button multiple times),
+  the second request would fail with a DynamoDB error.
+  Now, duplicate write attempts are treated as idempotent success since Stripe already ensures the payment intent is not charged multiple times.
+
+## 2.3.9
+
+### Patch Changes
+
+- 9e17703c: Updated tTRPC to 10.45.3
+
 ## 2.3.8
 
 ### Patch Changes

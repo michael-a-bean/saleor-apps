@@ -1,37 +1,39 @@
 import { BaseError } from "@saleor/errors";
-import { err, ok, Result, ResultAsync } from "neverthrow";
+import { err, ok, type Result, ResultAsync } from "neverthrow";
 
-import { AtobaraiMerchantCode } from "../atobarai-merchant-code";
-import { AtobaraiSecretSpCode } from "../atobarai-secret-sp-code";
-import { AtobaraiTerminalId } from "../atobarai-terminal-id";
-import { AtobaraiCancelTransactionPayload } from "./atobarai-cancel-transaction-payload";
+import { createLogger } from "@/lib/logger";
+
+import { type AtobaraiMerchantCode } from "../atobarai-merchant-code";
+import { type AtobaraiSecretSpCode } from "../atobarai-secret-sp-code";
+import { type AtobaraiTerminalId } from "../atobarai-terminal-id";
+import { type AtobaraiCancelTransactionPayload } from "./atobarai-cancel-transaction-payload";
 import {
-  AtobaraiCancelTransactionSuccessResponse,
+  type AtobaraiCancelTransactionSuccessResponse,
   createAtobaraiCancelTransactionSuccessResponse,
 } from "./atobarai-cancel-transaction-success-response";
-import { AtobaraiChangeTransactionPayload } from "./atobarai-change-transaction-payload";
+import { type AtobaraiChangeTransactionPayload } from "./atobarai-change-transaction-payload";
 import { createAtobaraiErrorResponse } from "./atobarai-error-response";
-import { AtobaraiFulfillmentReportPayload } from "./atobarai-fulfillment-report-payload";
+import { type AtobaraiFulfillmentReportPayload } from "./atobarai-fulfillment-report-payload";
 import {
-  AtobaraiFulfillmentReportSuccessResponse,
+  type AtobaraiFulfillmentReportSuccessResponse,
   createAtobaraiFulfillmentReportSuccessResponse,
 } from "./atobarai-fulfillment-report-success-response";
-import { AtobaraiRegisterTransactionPayload } from "./atobarai-register-transaction-payload";
+import { type AtobaraiRegisterTransactionPayload } from "./atobarai-register-transaction-payload";
 import {
-  AtobaraiTransactionSuccessResponse,
+  type AtobaraiTransactionSuccessResponse,
   createAtobaraiTransactionSuccessResponse,
 } from "./atobarai-transaction-success-response";
 import {
-  AtobaraiApiChangeTransactionErrors,
+  type AtobaraiApiChangeTransactionErrors,
   AtobaraiApiClientCancelTransactionError,
   AtobaraiApiClientChangeTransactionError,
   AtobaraiApiClientFulfillmentReportError,
   AtobaraiApiClientRegisterTransactionError,
   AtobaraiApiClientValidationError,
-  AtobaraiApiRegisterTransactionErrors,
-  AtobaraiEnvironment,
+  type AtobaraiApiRegisterTransactionErrors,
+  type AtobaraiEnvironment,
   AtobaraiMultipleResultsError,
-  IAtobaraiApiClient,
+  type IAtobaraiApiClient,
 } from "./types";
 
 export class AtobaraiApiClient implements IAtobaraiApiClient {
@@ -46,6 +48,7 @@ export class AtobaraiApiClient implements IAtobaraiApiClient {
   private atobaraiMerchantCode: AtobaraiMerchantCode;
   private atobaraiSecretSpCode: AtobaraiSecretSpCode;
   private atobaraiEnvironment: AtobaraiEnvironment;
+  private logger = createLogger("AtobaraiApiClient");
 
   private constructor(args: {
     atobaraiTerminalId: AtobaraiTerminalId;
@@ -130,6 +133,12 @@ export class AtobaraiApiClient implements IAtobaraiApiClient {
 
       const errors = this.convertErrorResponseToNormalizedErrors(response);
 
+      this.logger.warn("Atobarai API returned an error on registerTransaction", {
+        status: result.value.status,
+        errorCodes: errors.map((e) => e.code),
+        response,
+      });
+
       return err(
         new AtobaraiApiClientRegisterTransactionError("Atobarai API returned an error", {
           errors,
@@ -183,6 +192,12 @@ export class AtobaraiApiClient implements IAtobaraiApiClient {
 
       const errors = this.convertErrorResponseToNormalizedErrors(response);
 
+      this.logger.warn("Atobarai API returned an error on changeTransaction", {
+        status: result.value.status,
+        errorCodes: errors.map((e) => e.code),
+        response,
+      });
+
       return err(
         new AtobaraiApiClientChangeTransactionError("Atobarai API returned an error", {
           errors,
@@ -235,6 +250,13 @@ export class AtobaraiApiClient implements IAtobaraiApiClient {
     const is403 = result.value.status === 401;
 
     if (is401 || is403) {
+      this.logger.warn(
+        "Atobarai API returned an error: invalid credentials error on verifyCredentials",
+        {
+          status: result.value.status,
+        },
+      );
+
       return err(
         new AtobaraiApiClientValidationError("Invalid credentials", {
           cause: new Error(`Received status code ${result.value.status}`),
@@ -276,6 +298,12 @@ export class AtobaraiApiClient implements IAtobaraiApiClient {
       const response = await result.value.json();
 
       const errors = this.convertErrorResponseToNormalizedErrors(response);
+
+      this.logger.warn("Atobarai API returned an error on reportFulfillment", {
+        status: result.value.status,
+        errorCodes: errors.map((e) => e.code),
+        response,
+      });
 
       return err(
         new AtobaraiApiClientFulfillmentReportError("Atobarai API returned an error", {
@@ -328,6 +356,12 @@ export class AtobaraiApiClient implements IAtobaraiApiClient {
       const response = await result.value.json();
 
       const errors = this.convertErrorResponseToNormalizedErrors(response);
+
+      this.logger.warn("Atobarai API returned an error on cancelTransaction", {
+        status: result.value.status,
+        errorCodes: errors.map((e) => e.code),
+        response,
+      });
 
       return err(
         new AtobaraiApiClientCancelTransactionError("Atobarai API returned an error", {

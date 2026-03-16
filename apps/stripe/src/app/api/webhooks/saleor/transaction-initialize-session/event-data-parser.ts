@@ -6,6 +6,7 @@ import { ApplePayPaymentMethod } from "@/modules/stripe/payment-methods/apple-pa
 import { CardPaymentMethod } from "@/modules/stripe/payment-methods/card";
 import { GooglePayPaymentMethod } from "@/modules/stripe/payment-methods/google-pay";
 import { KlarnaPaymentMethod } from "@/modules/stripe/payment-methods/klarna";
+import { LinkPaymentMethod } from "@/modules/stripe/payment-methods/link";
 import { PayPalPaymentMethod } from "@/modules/stripe/payment-methods/paypal";
 import { SepaDebitPaymentMethod } from "@/modules/stripe/payment-methods/sepa-debit";
 import { USBankAccountPaymentMethod } from "@/modules/stripe/payment-methods/us-bank-account";
@@ -20,6 +21,7 @@ const TransactionInitializeEventDataSchema = z
       PayPalPaymentMethod.TransactionInitializeSchema,
       USBankAccountPaymentMethod.TransactionInitializeSchema,
       SepaDebitPaymentMethod.TransactionInitializeSchema,
+      LinkPaymentMethod.TransactionInitializeSchema,
     ]),
   })
   .strict()
@@ -59,11 +61,25 @@ export const parseTransactionInitializeSessionEventData = (raw: unknown) => {
   );
 
   if (hasInvalidUnionDiscriminator) {
+    const attemptedMethod =
+      raw != null &&
+      typeof raw === "object" &&
+      "paymentIntent" in raw &&
+      raw.paymentIntent != null &&
+      typeof raw.paymentIntent === "object" &&
+      "paymentMethod" in raw.paymentIntent &&
+      typeof raw.paymentIntent.paymentMethod === "string"
+        ? raw.paymentIntent.paymentMethod
+        : "unknown";
+
     return err(
-      // todo print payment method from the frontend
       new UnsupportedPaymentMethodError("Payment method is not supported", {
         cause: parsingResult.error,
-        props: { data: raw },
+        props: {
+          data: raw,
+          publicMessage: `Payment method "${attemptedMethod}" is not supported. Contact Saleor for assistance.`,
+          merchantMessage: `Payment intent not created - payment method "${attemptedMethod}" is not supported`,
+        },
       }),
     );
   }

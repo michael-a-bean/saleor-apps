@@ -1,13 +1,22 @@
-import { err, errAsync, Result, ResultAsync } from "neverthrow";
+import { err, errAsync, fromThrowable, ok, Result, ResultAsync } from "neverthrow";
 
 import { BaseError } from "../../../errors";
 import { bytesToKb } from "../../../lib/bytes-to-kb";
 import { createLogger } from "../../../logger";
-import { SmtpConfiguration } from "../../smtp/configuration/smtp-config-schema";
-import { IGetSmtpConfiguration } from "../../smtp/configuration/smtp-configuration.service";
-import { IEmailCompiler } from "../../smtp/services/email-compiler";
-import { ISMTPEmailSender, SendMailArgs } from "../../smtp/services/smtp-email-sender";
-import { MessageEventTypes } from "../message-event-types";
+import { FallbackSenderEmail } from "../../saleor-fallback-behavior/fallback-sender-email";
+import { TenantName } from "../../saleor-fallback-behavior/tenant-name";
+import {
+  getFallbackSmtpConfigSchema,
+  type SmtpConfiguration,
+} from "../../smtp/configuration/smtp-config-schema";
+import {
+  type IGetFallbackSmtpEnabled,
+  type IGetSmtpConfiguration,
+} from "../../smtp/configuration/smtp-configuration.service";
+import { defaultMjmlSubjectTemplates, defaultMjmlTemplates } from "../../smtp/default-templates";
+import { type IEmailCompiler } from "../../smtp/services/email-compiler";
+import { type ISMTPEmailSender, type SendMailArgs } from "../../smtp/services/smtp-email-sender";
+import { type MessageEventTypes, messageEventTypes } from "../message-event-types";
 
 export class SendEventMessagesUseCase {
   static BaseError = BaseError.subclass("SendEventMessagesUseCaseError");
@@ -26,10 +35,6 @@ export class SendEventMessagesUseCase {
    */
   static ClientError = BaseError.subclass("SendEventMessagesUseCaseClientError");
 
-  static MissingAvailableConfigurationError = this.ClientError.subclass(
-    "MissingAvailableConfigurationError",
-  );
-
   static EmailCompilationError = this.ClientError.subclass("EmailCompilationError");
 
   static InvalidSenderConfigError = this.ClientError.subclass("InvalidSenderConfigError");
@@ -44,15 +49,41 @@ export class SendEventMessagesUseCase {
 
   static EventSettingsMissingError = this.NoOpError.subclass("EventSettingsMissingError");
 
+  static FallbackNotConfiguredError = this.NoOpError.subclass("FallbackNotConfiguredError");
+
+  static InvalidEmailAddressError = this.NoOpError.subclass("InvalidEmailAddressError");
+
+  static RejectedTestDomainError = this.NoOpError.subclass("RejectedTestDomainError");
+
   private logger = createLogger("SendEventMessagesUseCase");
 
   constructor(
     private deps: {
-      smtpConfigurationService: IGetSmtpConfiguration;
+      configService: IGetSmtpConfiguration & IGetFallbackSmtpEnabled;
       emailCompiler: IEmailCompiler;
       emailSender: ISMTPEmailSender;
     },
   ) {}
+
+  /**
+   * Enriches the payload with branding info from the SMTP configuration.
+   * This allows templates to use {{branding.siteName}} and {{branding.logoUrl}}.
+   */
+  private enrichPayloadWithBranding(payload: unknown, config: SmtpConfiguration): unknown {
+    const hasBranding = config.brandingSiteName || config.brandingLogoUrl;
+
+    if (!hasBranding) {
+      return payload;
+    }
+
+    return {
+      ...(payload as object),
+      branding: {
+        siteName: config.brandingSiteName || null,
+        logoUrl: config.brandingLogoUrl || null,
+      },
+    };
+  }
 
   private processSingleConfiguration({
     config,
@@ -60,12 +91,14 @@ export class SendEventMessagesUseCase {
     payload,
     recipientEmail,
     channelSlug,
+    headers,
   }: {
     config: SmtpConfiguration;
     event: MessageEventTypes;
     payload: unknown;
     recipientEmail: string;
     channelSlug: string;
+    headers?: Record<string, string>;
   }) {
     const eventSettings = config.events.find((e) => e.eventType === event);
 
@@ -112,9 +145,12 @@ export class SendEventMessagesUseCase {
       );
     }
 
+    // Enrich payload with branding from config
+    const enrichedPayload = this.enrichPayloadWithBranding(payload, config);
+
     const preparedEmailResult = this.deps.emailCompiler.compile({
       event: event,
-      payload: payload,
+      payload: enrichedPayload,
       recipientEmail: recipientEmail,
       bodyTemplate: eventSettings.template,
       subjectTemplate: eventSettings.subject,
@@ -158,7 +194,7 @@ export class SendEventMessagesUseCase {
 
     return ResultAsync.fromPromise(
       this.deps.emailSender.sendEmailWithSmtp({
-        mailData: preparedEmailResult.value,
+        mailData: { ...preparedEmailResult.value, ...(headers && { headers }) },
         smtpSettings,
       }),
       (err) => {
@@ -183,20 +219,158 @@ export class SendEventMessagesUseCase {
     );
   }
 
+  private async sendWithFallback({
+    event,
+    payload,
+    recipientEmail,
+    channelSlug,
+    saleorApiUrl,
+  }: {
+    event: MessageEventTypes;
+    payload: unknown;
+    recipientEmail: string;
+    channelSlug: string;
+    saleorApiUrl: string;
+  }): Promise<Result<unknown, Array<InstanceType<typeof SendEventMessagesUseCase.BaseError>>>> {
+    this.logger.info("No custom configurations found, checking fallback SMTP");
+
+    const fallbackEnabledResult = await this.deps.configService.getIsFallbackSmtpEnabled();
+
+    const recipientDomain = recipientEmail.split("@")[1]?.toLowerCase();
+
+    if (!recipientDomain) {
+      this.logger.error("Received invalid input: missing domain in the email address");
+
+      return err([
+        new SendEventMessagesUseCase.InvalidEmailAddressError(
+          "Received an invalid email address: couldn't determine the domain",
+          {
+            props: { channelSlug, event, recipientEmail },
+          },
+        ),
+      ]);
+    }
+
+    if (fallbackEnabledResult.isErr() || !fallbackEnabledResult.value) {
+      this.logger.info("Fallback SMTP is not enabled");
+
+      return err([
+        new SendEventMessagesUseCase.FallbackNotConfiguredError(
+          "No custom configuration and fallback is not enabled",
+          {
+            props: { channelSlug, event },
+          },
+        ),
+      ]);
+    }
+
+    const fallbackSmtpConfig = getFallbackSmtpConfigSchema();
+
+    if (!fallbackSmtpConfig) {
+      this.logger.info("Fallback SMTP env vars are not configured");
+
+      return err([
+        new SendEventMessagesUseCase.FallbackNotConfiguredError(
+          "Fallback enabled but env vars are not configured",
+          {
+            props: { channelSlug, event },
+          },
+        ),
+      ]);
+    }
+
+    // Block sending to test/invalid domains when using fallback SMTP
+    if (fallbackSmtpConfig.blockedDomains.includes(recipientDomain)) {
+      this.logger.info("Rejected sending email: test domain detected", {
+        recipientDomain,
+      });
+
+      return err([
+        new SendEventMessagesUseCase.RejectedTestDomainError(
+          "This recipient domain is blocked for fallback SMTP",
+          {
+            props: { channelSlug, event, recipientEmail },
+          },
+        ),
+      ]);
+    }
+
+    const senderEmailResult = fromThrowable(
+      () => new FallbackSenderEmail(saleorApiUrl, fallbackSmtpConfig.senderDomain).getEmail(),
+      (error) =>
+        new SendEventMessagesUseCase.FallbackNotConfiguredError(
+          "Fallback sender email could not be derived from saleorApiUrl",
+          {
+            props: { channelSlug, event },
+            cause: error,
+          },
+        ),
+    )();
+
+    if (senderEmailResult.isErr()) {
+      this.logger.error("Failed to derive fallback sender email", {
+        error: senderEmailResult.error,
+      });
+
+      return err([senderEmailResult.error]);
+    }
+
+    const senderEmail = senderEmailResult.value;
+
+    const fallbackConfig: SmtpConfiguration = {
+      id: "fallback",
+      active: true,
+      name: "Saleor Cloud Fallback",
+      senderName: fallbackSmtpConfig.senderName,
+      senderEmail,
+      smtpHost: fallbackSmtpConfig.smtpHost,
+      smtpPort: fallbackSmtpConfig.smtpPort,
+      smtpUser: fallbackSmtpConfig.smtpUser,
+      smtpPassword: fallbackSmtpConfig.smtpPassword,
+      encryption: fallbackSmtpConfig.encryption,
+      channels: { channels: [], mode: "restrict", override: false },
+      events: messageEventTypes.map((eventType) => ({
+        active: true,
+        eventType,
+        template: defaultMjmlTemplates[eventType],
+        subject: defaultMjmlSubjectTemplates[eventType],
+      })),
+    };
+
+    const tenantName = new TenantName(saleorApiUrl).getTenantName();
+
+    const fallbackResult = await this.processSingleConfiguration({
+      config: fallbackConfig,
+      event,
+      payload,
+      recipientEmail,
+      channelSlug,
+      headers: { "X-SES-TENANT": tenantName },
+    });
+
+    if (fallbackResult.isErr()) {
+      return err([fallbackResult.error]);
+    }
+
+    return ok(fallbackResult.value);
+  }
+
   async sendEventMessages({
     event,
     payload,
     recipientEmail,
     channelSlug,
+    saleorApiUrl,
   }: {
     channelSlug: string;
     payload: unknown;
     recipientEmail: string;
     event: MessageEventTypes;
+    saleorApiUrl: string;
   }): Promise<Result<unknown, Array<InstanceType<typeof SendEventMessagesUseCase.BaseError>>>> {
     this.logger.info("Calling sendEventMessages", { channelSlug, event });
 
-    const availableSmtpConfigurations = await this.deps.smtpConfigurationService.getConfigurations({
+    const availableSmtpConfigurations = await this.deps.configService.getConfigurations({
       active: true,
       availableInChannel: channelSlug,
     });
@@ -219,20 +393,13 @@ export class SendEventMessagesUseCase {
     }
 
     if (availableSmtpConfigurations.value.length === 0) {
-      this.logger.warn("Configuration list is empty, app is not configured");
-
-      return err([
-        new SendEventMessagesUseCase.MissingAvailableConfigurationError(
-          "Missing configuration for this channel that is active",
-          {
-            errors: [],
-            props: {
-              channelSlug,
-              event,
-            },
-          },
-        ),
-      ]);
+      return this.sendWithFallback({
+        event,
+        payload,
+        recipientEmail,
+        channelSlug,
+        saleorApiUrl,
+      });
     }
 
     this.logger.info(

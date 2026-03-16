@@ -2,8 +2,9 @@ import { SaleorAsyncWebhook } from "@saleor/app-sdk/handlers/next-app-router";
 
 import {
   FulfillmentTrackingNumberUpdatedDocument,
-  FulfillmentTrackingNumberUpdatedEventFragment,
+  type FulfillmentTrackingNumberUpdatedEventFragment,
 } from "@/generated/graphql";
+import { createLogger } from "@/lib/logger";
 import { saleorApp } from "@/lib/saleor-app";
 
 export const fulfillmentTrackingNumberUpdatedWebhookDefinition =
@@ -14,4 +15,10 @@ export const fulfillmentTrackingNumberUpdatedWebhookDefinition =
     isActive: true,
     query: FulfillmentTrackingNumberUpdatedDocument,
     webhookPath: "api/webhooks/saleor/fulfillment-tracking-number-updated",
+    onError(error) {
+      createLogger("FULFILLMENT_TRACKING_NUMBER_UPDATED webhook").error(
+        "Failed to execute webhook",
+        { error },
+      );
+    },
   });

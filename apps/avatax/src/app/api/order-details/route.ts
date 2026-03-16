@@ -1,12 +1,13 @@
 import { verifyJWT } from "@saleor/app-sdk/auth";
-import { ExtensionPOSTAttributes } from "@saleor/app-sdk/types";
+import { type ExtensionPOSTAttributes } from "@saleor/app-sdk/types";
 import { createGraphQLClient } from "@saleor/apps-shared/create-graphql-client";
-import { TransactionModel } from "avatax/lib/models/TransactionModel";
-import { NextRequest } from "next/server";
+import { type TransactionModel } from "avatax/lib/models/TransactionModel";
+import { type NextRequest } from "next/server";
 
 import { metadataCache } from "@/lib/app-metadata-cache";
+import { createLogger } from "@/logger";
 import { createSettingsManager } from "@/modules/app/metadata-manager";
-import { AvataxConfig } from "@/modules/avatax/avatax-connection-schema";
+import { type AvataxConfig } from "@/modules/avatax/avatax-connection-schema";
 import { AvataxSdkClientFactory } from "@/modules/avatax/avatax-sdk-client-factory";
 import { AvataxTransactionDetailsFetcher } from "@/modules/avatax/avatax-transaction-details-fetcher";
 import { CrudSettingsManager } from "@/modules/crud-settings/crud-settings.service";
@@ -51,6 +52,8 @@ const getFromCache = (keySet: CacheKeySet): CacheValue | undefined => {
   return cache.get(generateCacheKey(keySet));
 };
 
+const logger = createLogger("orderDetailsHandler");
+
 // todo add caching on http. Probably we need to add stuff to GET for that
 const orderDetailsHandler = async (req: NextRequest) => {
   const { orderId, saleorApiUrl, appId, accessToken } = await getFieldsFromRequest(req);
@@ -62,6 +65,8 @@ const orderDetailsHandler = async (req: NextRequest) => {
       saleorApiUrl: saleorApiUrl,
     });
   } catch (e) {
+    logger.error("Failed to verify JWT", { error: e });
+
     return new Response("Failed to verify JWT", {
       status: 401,
     });

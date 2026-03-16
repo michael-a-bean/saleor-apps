@@ -1,7 +1,11 @@
 import { env } from "@/env";
 import { BaseError } from "@/error";
 import { ClientLogDynamoEntityFactory, LogsTable } from "@/modules/client-logs/dynamo-logs-table";
-import { DynamoDbLogWriter, ILogWriter, LogWriterContext } from "@/modules/client-logs/log-writer";
+import {
+  DynamoDbLogWriter,
+  type ILogWriter,
+  type LogWriterContext,
+} from "@/modules/client-logs/log-writer";
 import { LogsRepositoryDynamodb } from "@/modules/client-logs/logs-repository";
 import { createDocumentClient, createDynamoClient } from "@/modules/dynamodb/dynamo-client";
 
@@ -17,7 +21,10 @@ export class LogWriterFactory implements ILogWriterFactory {
 
   private createDynamoDbWriter(context: LogWriterContext): ILogWriter {
     try {
-      const dynamoClient = createDynamoClient();
+      const dynamoClient = createDynamoClient({
+        connectionTimeout: env.DYNAMODB_CONNECTION_TIMEOUT_MS,
+        requestTimeout: env.DYNAMODB_REQUEST_TIMEOUT_MS,
+      });
       const logsTable = LogsTable.create({
         documentClient: createDocumentClient(dynamoClient),
         tableName: env.DYNAMODB_LOGS_TABLE_NAME,

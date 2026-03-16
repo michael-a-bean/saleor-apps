@@ -1,31 +1,35 @@
-import { AuthData } from "@saleor/app-sdk/APL";
+import { type AuthData } from "@saleor/app-sdk/APL";
 import { captureException } from "@sentry/nextjs";
-import { err, fromPromise, Result } from "neverthrow";
+import { err, fromPromise, type Result } from "neverthrow";
 
 import { AvataxClient } from "@/modules/avatax/avatax-client";
-import { AvataxConfig } from "@/modules/avatax/avatax-connection-schema";
+import { type AvataxConfig } from "@/modules/avatax/avatax-connection-schema";
 import { AvataxEntityTypeMatcher } from "@/modules/avatax/avatax-entity-type-matcher";
 import { AvataxSdkClientFactory } from "@/modules/avatax/avatax-sdk-client-factory";
 import { AvataxCalculateTaxesPayloadService } from "@/modules/avatax/calculate-taxes/avatax-calculate-taxes-payload.service";
-import { AvataxCalculateTaxesPayloadLinesTransformer } from "@/modules/avatax/calculate-taxes/avatax-calculate-taxes-payload-lines-transformer";
+import { type AvataxCalculateTaxesPayloadLinesTransformer } from "@/modules/avatax/calculate-taxes/avatax-calculate-taxes-payload-lines-transformer";
 import { AvataxCalculateTaxesPayloadTransformer } from "@/modules/avatax/calculate-taxes/avatax-calculate-taxes-payload-transformer";
-import { AvataxCalculateTaxesResponseTransformer } from "@/modules/avatax/calculate-taxes/avatax-calculate-taxes-response-transformer";
+import { type AvataxCalculateTaxesResponseTransformer } from "@/modules/avatax/calculate-taxes/avatax-calculate-taxes-response-transformer";
 import { AutomaticallyDistributedProductLinesDiscountsStrategy } from "@/modules/avatax/discounts";
 import { AvataxTaxCodeMatchesService } from "@/modules/avatax/tax-code/avatax-tax-code-matches.service";
 import { CalculateTaxesLogRequest } from "@/modules/client-logs/calculate-taxes-log-request";
-import { ILogWriterFactory } from "@/modules/client-logs/log-writer-factory";
+import { type ILogWriterFactory } from "@/modules/client-logs/log-writer-factory";
 
-import { MetadataItem } from "../../../../generated/graphql";
 import { BaseError } from "../../../error";
-import { AppConfigExtractor, IAppConfigExtractor } from "../../../lib/app-config-extractor";
+import { AppConfigExtractor, type IAppConfigExtractor } from "../../../lib/app-config-extractor";
 import { AppConfigurationLogger } from "../../../lib/app-configuration-logger";
+import { type MetadataItem } from "../../../lib/metadata-item";
 import { createLogger } from "../../../logger";
 import {
   AvataxCalculateTaxesAdapter,
-  AvataxCalculateTaxesResponse,
+  type AvataxCalculateTaxesResult,
 } from "../../avatax/calculate-taxes/avatax-calculate-taxes-adapter";
-import { AvataxGetTaxWrongUserInputError, TaxIncompletePayloadErrors } from "../../taxes/tax-error";
-import { CalculateTaxesPayload } from "../../webhooks/payloads/calculate-taxes-payload";
+import {
+  AvataxGetTaxWrongUserInputError,
+  AvataxTimeoutError,
+  TaxIncompletePayloadErrors,
+} from "../../taxes/tax-error";
+import { type CalculateTaxesPayload } from "../../webhooks/payloads/calculate-taxes-payload";
 import { verifyCalculateTaxesPayload } from "../../webhooks/validate-webhook-payload";
 
 export class CalculateTaxesUseCase {
@@ -42,6 +46,7 @@ export class CalculateTaxesUseCase {
   static FailedCalculatingTaxesError = this.CalculateTaxesUseCaseError.subclass(
     "FailedCalculatingTaxesError",
   );
+  static TimeoutError = this.CalculateTaxesUseCaseError.subclass("TimeoutError");
 
   constructor(
     private deps: {
@@ -140,7 +145,7 @@ export class CalculateTaxesUseCase {
     authData: AuthData,
   ): Promise<
     Result<
-      AvataxCalculateTaxesResponse,
+      AvataxCalculateTaxesResult,
       (typeof CalculateTaxesUseCase.CalculateTaxesUseCaseError)["prototype"]
     >
   > {
@@ -219,6 +224,12 @@ export class CalculateTaxesUseCase {
           .mapErr(captureException)
           .map(logWriter.writeLog);
 
+        if (err instanceof AvataxTimeoutError) {
+          return new CalculateTaxesUseCase.TimeoutError("AvaTax API request timed out", {
+            cause: err,
+          });
+        }
+
         // Check if this is a user input error (should return HTTP 400)
         if (err instanceof AvataxGetTaxWrongUserInputError) {
           return new CalculateTaxesUseCase.ExpectedIncompletePayloadError(
@@ -241,7 +252,7 @@ export class CalculateTaxesUseCase {
         sourceId: payload.taxBase.sourceObject.id,
         channelId: payload.taxBase.channel.id,
         sourceType: "checkout",
-        calculatedTaxesResult: results,
+        calculatedTaxesResult: results.response,
       })
         .mapErr(captureException)
         .map(logWriter.writeLog);

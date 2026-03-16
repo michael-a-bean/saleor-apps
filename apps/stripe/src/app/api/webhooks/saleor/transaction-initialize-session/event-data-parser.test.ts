@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   ParseError,
   parseTransactionInitializeSessionEventData,
-  TransactionInitializeSessionEventData,
+  type TransactionInitializeSessionEventData,
   UnsupportedPaymentMethodError,
 } from "./event-data-parser";
 
@@ -24,6 +24,22 @@ describe("parseTransactionInitializeSessionEventData", () => {
     });
   });
 
+  it("should parse valid data with link payment method", () => {
+    const storefrontData = {
+      paymentIntent: {
+        paymentMethod: "link",
+      },
+    };
+
+    const result = parseTransactionInitializeSessionEventData(storefrontData);
+
+    expect(result._unsafeUnwrap()).toStrictEqual({
+      paymentIntent: {
+        paymentMethod: "link",
+      },
+    });
+  });
+
   it("should return UnsupportedPaymentMethodError if storefront sends unsupported payment method", () => {
     const storefrontData = {
       paymentIntent: {
@@ -34,6 +50,9 @@ describe("parseTransactionInitializeSessionEventData", () => {
     const result = parseTransactionInitializeSessionEventData(storefrontData);
 
     expect(result._unsafeUnwrapErr()).toBeInstanceOf(UnsupportedPaymentMethodError);
+    expect(result._unsafeUnwrapErr().publicMessage).toBe(
+      'Payment method "my-pay" is not supported. Contact Saleor for assistance.',
+    );
   });
 
   it("should return ParseError if storefront sends additional field we dont support for card payment method", () => {

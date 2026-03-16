@@ -1,4 +1,4 @@
-import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
+import { type DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { Entity, item, string, Table } from "dynamodb-toolbox";
 
 import { env } from "@/env";
@@ -67,7 +67,10 @@ const SegmentConfigTableSchema = {
   }),
 };
 
-export const client = createDynamoDBClient();
+export const client = createDynamoDBClient({
+  connectionTimeout: env.DYNAMODB_CONNECTION_TIMEOUT_MS,
+  requestTimeout: env.DYNAMODB_REQUEST_TIMEOUT_MS,
+});
 
 export const documentClient = createDynamoDBDocumentClient(client);
 

@@ -1,7 +1,9 @@
 import { createManifestHandler } from "@saleor/app-sdk/handlers/next";
-import { AppManifest } from "@saleor/app-sdk/types";
+import { type AppManifest } from "@saleor/app-sdk/types";
 import { wrapWithLoggerContext } from "@saleor/apps-logger/node";
 import { withSpanAttributes } from "@saleor/apps-otel/src/with-span-attributes";
+
+import { env } from "@/env";
 
 import packageJson from "../../../package.json";
 import { loggerContext } from "../../logger-context";
@@ -12,8 +14,8 @@ import { productVariantUpdatedWebhook } from "./webhooks/product-variant-updated
 
 const handler = createManifestHandler({
   async manifestFactory({ appBaseUrl }) {
-    const iframeBaseUrl = process.env.APP_IFRAME_BASE_URL ?? appBaseUrl;
-    const apiBaseURL = process.env.APP_API_BASE_URL ?? appBaseUrl;
+    const iframeBaseUrl = env.APP_IFRAME_BASE_URL ?? appBaseUrl;
+    const apiBaseURL = env.APP_API_BASE_URL ?? appBaseUrl;
 
     const manifest: AppManifest = {
       about:

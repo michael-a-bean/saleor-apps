@@ -1,26 +1,30 @@
 import { z } from "zod";
 
 import {
-  TransactionSessionActionRequired,
-  TransactionSessionFailure,
-  TransactionSessionSuccess,
+  type TransactionSessionActionRequired,
+  type TransactionSessionFailure,
+  type TransactionSessionSuccess,
 } from "@/generated/app-webhooks-types/transaction-initialize-session";
 import { assertUnreachable } from "@/lib/assert-unreachable";
 import {
   AtobaraiApiClientRegisterTransactionErrorPublicCode,
-  AtobaraiApiRegisterTransactionErrors,
+  type AtobaraiApiRegisterTransactionErrors,
   AtobaraiMultipleResultsErrorPublicCode,
 } from "@/modules/atobarai/api/types";
-import { AtobaraiTransactionId } from "@/modules/atobarai/atobarai-transaction-id";
-import { SaleorPaymentMethodDetails } from "@/modules/saleor/saleor-payment-method-details";
+import { type AtobaraiTransactionId } from "@/modules/atobarai/atobarai-transaction-id";
+import { type SaleorPaymentMethodDetails } from "@/modules/saleor/saleor-payment-method-details";
 import {
   ChargeActionRequiredResult,
-  ChargeFailureResult,
+  type ChargeFailureResult,
   ChargeSuccessResult,
 } from "@/modules/transaction-result/charge-result";
 
 import { SuccessWebhookResponse } from "../saleor-webhook-responses";
-import { AtobaraiFailureTransactionErrorPublicCode, UseCaseErrors } from "../use-case-errors";
+import {
+  AtobaraiFailureTransactionErrorPublicCode,
+  InvalidEventValidationErrorPublicCode,
+  type UseCaseErrors,
+} from "../use-case-errors";
 
 class Success extends SuccessWebhookResponse {
   readonly transactionResult: ChargeSuccessResult | ChargeActionRequiredResult;
@@ -78,6 +82,7 @@ class Failure extends SuccessWebhookResponse {
           z.literal(AtobaraiApiClientRegisterTransactionErrorPublicCode),
           z.literal(AtobaraiFailureTransactionErrorPublicCode),
           z.literal(AtobaraiMultipleResultsErrorPublicCode),
+          z.literal(InvalidEventValidationErrorPublicCode),
         ]),
         message: z.string(),
         apiError: z.string().optional(),

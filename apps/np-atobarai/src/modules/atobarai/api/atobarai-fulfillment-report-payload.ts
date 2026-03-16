@@ -1,10 +1,16 @@
+import { BaseError } from "@saleor/errors";
 import { z } from "zod";
 
+import { zodReadableError } from "@/lib/zod-readable-error";
+
 import {
-  AtobaraiShippingCompanyCode,
+  type AtobaraiShippingCompanyCode,
   AtobaraiShippingCompanyCodeSchema,
 } from "../atobarai-shipping-company-code";
-import { AtobaraiTransactionId, AtobaraiTransactionIdSchema } from "../atobarai-transaction-id";
+import {
+  type AtobaraiTransactionId,
+  AtobaraiTransactionIdSchema,
+} from "../atobarai-transaction-id";
 
 const schema = z
   .object({
@@ -18,12 +24,21 @@ const schema = z
   })
   .brand("AtobaraiFulfillmentReportPayload");
 
+export const AtobaraiFulfillmentReportPayloadValidationError = BaseError.subclass(
+  "AtobaraiFulfillmentReportPayloadValidationError",
+  {
+    props: {
+      _brand: "AtobaraiFulfillmentReportPayloadValidationError" as const,
+    },
+  },
+);
+
 export const createAtobaraiFulfillmentReportPayload = (args: {
   trackingNumber: string;
   atobaraiTransactionId: AtobaraiTransactionId;
   shippingCompanyCode: AtobaraiShippingCompanyCode;
-}) =>
-  schema.parse({
+}) => {
+  const parseResult = schema.safeParse({
     transactions: [
       {
         np_transaction_id: args.atobaraiTransactionId,
@@ -32,5 +47,17 @@ export const createAtobaraiFulfillmentReportPayload = (args: {
       },
     ],
   });
+
+  if (!parseResult.success) {
+    const readableError = zodReadableError(parseResult.error);
+
+    throw new AtobaraiFulfillmentReportPayloadValidationError(
+      `Invalid fulfillment report payload: ${readableError.message}`,
+      { cause: readableError },
+    );
+  }
+
+  return parseResult.data;
+};
 
 export type AtobaraiFulfillmentReportPayload = z.infer<typeof schema>;

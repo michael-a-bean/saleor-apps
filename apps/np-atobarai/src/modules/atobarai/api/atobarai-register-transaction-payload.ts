@@ -1,16 +1,18 @@
+import { BaseError } from "@saleor/errors";
 import { z } from "zod";
 
-import { SaleorTransactionToken } from "@/modules/saleor/saleor-transaction-token";
+import { zodReadableError } from "@/lib/zod-readable-error";
+import { type SaleorTransactionToken } from "@/modules/saleor/saleor-transaction-token";
 
-import { AtobaraiCustomer, AtobaraiCustomerSchema } from "../atobarai-customer";
+import { type AtobaraiCustomer, AtobaraiCustomerSchema } from "../atobarai-customer";
 import {
-  AtobaraiDeliveryDestination,
+  type AtobaraiDeliveryDestination,
   AtobaraiDeliveryDestinationSchema,
 } from "../atobarai-delivery-destination";
-import { AtobaraiGoods, AtobaraiGoodsSchema } from "../atobarai-goods/atobarai-goods";
-import { AtobaraiMoney } from "../atobarai-money";
+import { type AtobaraiGoods, AtobaraiGoodsSchema } from "../atobarai-goods/atobarai-goods";
+import { type AtobaraiMoney } from "../atobarai-money";
 import { ATOBARAI_SETTLEMENT_TYPE } from "../atobarai-settelment-type";
-import { AtobaraiShopOrderDate } from "../atobarai-shop-order-date";
+import { type AtobaraiShopOrderDate } from "../atobarai-shop-order-date";
 
 const schema = z
   .object({
@@ -30,6 +32,15 @@ const schema = z
   })
   .brand("AtobaraiRegisterTransactionPayload");
 
+export const AtobaraiRegisterTransactionPayloadValidationError = BaseError.subclass(
+  "AtobaraiRegisterTransactionPayloadValidationError",
+  {
+    props: {
+      _brand: "AtobaraiRegisterTransactionPayloadValidationError" as const,
+    },
+  },
+);
+
 export const createAtobaraiRegisterTransactionPayload = (args: {
   saleorTransactionToken: SaleorTransactionToken;
   atobaraiMoney: AtobaraiMoney;
@@ -37,8 +48,8 @@ export const createAtobaraiRegisterTransactionPayload = (args: {
   atobaraiDeliveryDestination: AtobaraiDeliveryDestination;
   atobaraiGoods: AtobaraiGoods;
   atobaraiShopOrderDate: AtobaraiShopOrderDate;
-}) =>
-  schema.parse({
+}) => {
+  const parseResult = schema.safeParse({
     transactions: [
       {
         shop_transaction_id: args.saleorTransactionToken,
@@ -51,5 +62,17 @@ export const createAtobaraiRegisterTransactionPayload = (args: {
       },
     ],
   });
+
+  if (!parseResult.success) {
+    const readableError = zodReadableError(parseResult.error);
+
+    throw new AtobaraiRegisterTransactionPayloadValidationError(
+      `Invalid register transaction payload: ${readableError.message}`,
+      { cause: readableError },
+    );
+  }
+
+  return parseResult.data;
+};
 
 export type AtobaraiRegisterTransactionPayload = z.infer<typeof schema>;

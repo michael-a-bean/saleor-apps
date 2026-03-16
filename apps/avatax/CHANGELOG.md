@@ -1,5 +1,88 @@
 # saleor-app-avatax
 
+## 1.22.1
+
+### Patch Changes
+
+- 0484f64: Add error cause for verifyJwt failures on tRPC
+- 8cc005b: Updated aws-sdk packages and dynamodb-toolbox to latest versions
+- Updated dependencies [8cc005b]
+  - @saleor/app-problems@1.0.1
+
+## 1.22.0
+
+### Minor Changes
+
+- 49a13645: Added App Problems API support, which will report issues with app directly to Saleor/Dashboard
+
+### Patch Changes
+
+- ddfa9593: Changed how generated graphql->typescript types work. Now only types that are directly or indirectly connected to written documents (mutations, queries) are generated
+- Updated dependencies [ddfa9593]
+  - @saleor/webhook-utils@0.2.8
+
+## 1.21.14
+
+### Patch Changes
+
+- d9bb00f5: GraphQL schema has been refreshed to use latest 3.22 (this updates schema but does not change which APIs are executed)
+- c1cbffb4: Applied "consistent imports" rule from ESLint to ensure type-only imports are marked with `import type` clause. This should improve tree shaking and reduce side effects
+- dec95470: Removed nested graphql.schema files for each app/package and added root schema. Now all packages have symlink pointing to the same file.
+- Updated dependencies [f0d36e14]
+- Updated dependencies [dec95470]
+  - @saleor/webhook-utils@0.2.7
+  - @saleor/apps-shared@1.14.2
+  - @saleor/apps-logger@1.6.3
+  - @saleor/apps-otel@2.4.0
+  - @saleor/react-hook-form-macaw@0.2.16
+  - @saleor/sentry-utils@0.2.5
+  - @saleor/apps-ui@1.3.2
+
+## 1.21.13
+
+### Patch Changes
+
+- 19e7e964: Add an optional setting to write AvaTax exemption status to public checkout metadata after tax calculation.
+
+## 1.21.12
+
+### Patch Changes
+
+- d7ce7f67: Added client-side error capturing so client exceptions are reported to Sentry.
+
+## 1.21.11
+
+### Patch Changes
+
+- 07057788: Update DynamoDB/AWS & Toolbox dependencies
+- dec1541b: Now original AvaTax error from API is attached to custom errors that are going to Sentry, so it's easier to debug the root cause
+
+## 1.21.10
+
+### Patch Changes
+
+- d5d7a4fe: Introduced lib t3-oss/env, which adds build-time env variables validation. Now all env variables are statically declared and exposed type-safe way
+- 6eb71d91: Removed legacy SaleorCloudAPL initialization. This APL is deprecated and will be removed in app-sdk. Apps can no longer use it. This is not marked as a major change, because this API is private to Saleor Cloud
+- 6e5f69c5: Added max DynamoDB connection and request limits (2s for connection, 5s for request), so in case of downtime, app will terminate earlier
+
+## 1.21.9
+
+### Patch Changes
+
+- 560c3de4: Added logging to DynamoDB APL for better debugging and error visibility.
+
+## 1.21.8
+
+### Patch Changes
+
+- 3a5d102e: Fixed how AWS sdk is initialized by explicitly passing credentials. This is caused by Vercel issue, which started to implicitly override some of our credentials by injecting their own.
+
+## 1.21.7
+
+### Patch Changes
+
+- 9e17703c: Updated tTRPC to 10.45.3
+
 ## 1.21.6
 
 ### Patch Changes

@@ -1,10 +1,12 @@
-import { EncryptedMetadataManager, MetadataEntry } from "@saleor/app-sdk/settings-manager";
-import { Client } from "urql";
+import { EncryptedMetadataManager, type MetadataEntry } from "@saleor/app-sdk/settings-manager";
+import { type Client } from "urql";
+
+import { env } from "@/env";
 
 import {
   DeleteAppMetadataDocument,
   FetchAppDetailsDocument,
-  FetchAppDetailsQuery,
+  type FetchAppDetailsQuery,
   UpdateAppMetadataDocument,
 } from "../../generated/graphql";
 
@@ -100,7 +102,7 @@ export const createSettingsManager = (client: Client) => {
    */
   return new EncryptedMetadataManager({
     // Secret key should be randomly created for production and set as environment variable
-    encryptionKey: process.env.SECRET_KEY!,
+    encryptionKey: env.SECRET_KEY,
     fetchMetadata: () => fetchAllMetadata(client),
     mutateMetadata: (metadata) => mutateMetadata(client, metadata),
     deleteMetadata: (keys) => deleteMetadata(client, keys),

@@ -1,17 +1,22 @@
+import { BaseError } from "@saleor/errors";
 import { z } from "zod";
 
-import { SaleorTransactionToken } from "@/modules/saleor/saleor-transaction-token";
+import { zodReadableError } from "@/lib/zod-readable-error";
+import { type SaleorTransactionToken } from "@/modules/saleor/saleor-transaction-token";
 
-import { AtobaraiCustomer, AtobaraiCustomerSchema } from "../atobarai-customer";
+import { type AtobaraiCustomer, AtobaraiCustomerSchema } from "../atobarai-customer";
 import {
-  AtobaraiDeliveryDestination,
+  type AtobaraiDeliveryDestination,
   AtobaraiDeliveryDestinationSchema,
 } from "../atobarai-delivery-destination";
-import { AtobaraiGoods, AtobaraiGoodsSchema } from "../atobarai-goods/atobarai-goods";
-import { AtobaraiMoney } from "../atobarai-money";
+import { type AtobaraiGoods, AtobaraiGoodsSchema } from "../atobarai-goods/atobarai-goods";
+import { type AtobaraiMoney } from "../atobarai-money";
 import { ATOBARAI_SETTLEMENT_TYPE } from "../atobarai-settelment-type";
-import { AtobaraiShopOrderDate } from "../atobarai-shop-order-date";
-import { AtobaraiTransactionId, AtobaraiTransactionIdSchema } from "../atobarai-transaction-id";
+import { type AtobaraiShopOrderDate } from "../atobarai-shop-order-date";
+import {
+  type AtobaraiTransactionId,
+  AtobaraiTransactionIdSchema,
+} from "../atobarai-transaction-id";
 
 const schema = z
   .object({
@@ -32,6 +37,15 @@ const schema = z
   })
   .brand("AtobaraiChangeTransactionPayload");
 
+export const AtobaraiChangeTransactionPayloadValidationError = BaseError.subclass(
+  "AtobaraiChangeTransactionPayloadValidationError",
+  {
+    props: {
+      _brand: "AtobaraiChangeTransactionPayloadValidationError" as const,
+    },
+  },
+);
+
 export const createAtobaraiChangeTransactionPayload = (args: {
   atobaraiTransactionId: AtobaraiTransactionId;
   saleorTransactionToken: SaleorTransactionToken;
@@ -41,7 +55,7 @@ export const createAtobaraiChangeTransactionPayload = (args: {
   atobaraiGoods: AtobaraiGoods;
   atobaraiShopOrderDate: AtobaraiShopOrderDate;
 }): AtobaraiChangeTransactionPayload => {
-  return schema.parse({
+  const parseResult = schema.safeParse({
     transactions: [
       {
         np_transaction_id: args.atobaraiTransactionId,
@@ -55,6 +69,17 @@ export const createAtobaraiChangeTransactionPayload = (args: {
       },
     ],
   });
+
+  if (!parseResult.success) {
+    const readableError = zodReadableError(parseResult.error);
+
+    throw new AtobaraiChangeTransactionPayloadValidationError(
+      `Invalid change transaction payload: ${readableError.message}`,
+      { cause: readableError },
+    );
+  }
+
+  return parseResult.data;
 };
 
 export type AtobaraiChangeTransactionPayload = z.infer<typeof schema>;

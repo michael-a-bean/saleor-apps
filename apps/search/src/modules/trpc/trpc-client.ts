@@ -2,21 +2,19 @@ import { SALEOR_API_URL_HEADER, SALEOR_AUTHORIZATION_BEARER_HEADER } from "@sale
 import { httpBatchLink } from "@trpc/client";
 import { createTRPCNext } from "@trpc/next";
 
-import { createLogger } from "../../lib/logger";
+import { env } from "../../env";
 import { appBridgeInstance } from "../../pages/_app";
-import { AppRouter } from "./trpc-app-router";
+import type { AppRouter } from "./trpc-app-router";
 
 function getBaseUrl() {
   if (typeof window !== "undefined") return "";
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  if (env.VERCEL_URL) return `https://${env.VERCEL_URL}`;
 
-  return `http://localhost:${process.env.PORT ?? 3000}`;
+  return `http://localhost:${env.PORT}`;
 }
 
-const logger = createLogger("trpc-client");
-
 export const trpcClient = createTRPCNext<AppRouter>({
-  config({ ctx }) {
+  config() {
     return {
       links: [
         httpBatchLink({
@@ -25,9 +23,6 @@ export const trpcClient = createTRPCNext<AppRouter>({
             const { token, saleorApiUrl } = appBridgeInstance?.getState() || {};
 
             if (!token || !saleorApiUrl) {
-              logger.error(
-                "Can't initialize tRPC client before establishing the App Bridge connection",
-              );
               throw new Error("Token and Saleor API URL unknown");
             }
 

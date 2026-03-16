@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   AppIsNotConfiguredResponse,
   BrokenAppResponse,
-  MalformedRequestResponse,
   UnhandledErrorResponse,
 } from "@/app/api/webhooks/saleor/saleor-webhook-responses";
 
@@ -13,11 +12,7 @@ describe("BrokenAppResponse", () => {
     const fetchResponse = getConfigResponse.getResponse();
 
     expect(fetchResponse.status).toBe(500);
-    expect(await fetchResponse.json()).toMatchInlineSnapshot(`
-      {
-        "message": "App is not working",
-      }
-    `);
+    expect(await fetchResponse.text()).toBe("App is not working");
   });
 });
 
@@ -27,11 +22,7 @@ describe("AppIsNotConfiguredResponse", () => {
     const fetchResponse = missingConfigResponse.getResponse();
 
     expect(fetchResponse.status).toBe(400);
-    expect(await fetchResponse.json()).toMatchInlineSnapshot(`
-      {
-        "message": "App is not configured",
-      }
-    `);
+    expect(await fetchResponse.text()).toBe("App is not configured");
   });
 });
 
@@ -41,24 +32,6 @@ describe("UnhandledErrorResponse", () => {
     const fetchResponse = unhandledResponse.getResponse();
 
     expect(fetchResponse.status).toBe(500);
-    expect(await fetchResponse.json()).toMatchInlineSnapshot(`
-      {
-        "message": "Unhandled error",
-      }
-    `);
-  });
-});
-
-describe("MalformedRequestResponse", () => {
-  it("getResponse() returns valid Response with status 202 and message with error reason", async () => {
-    const saleorApiUrlResponse = new MalformedRequestResponse(new Error("Inner error"));
-    const fetchResponse = saleorApiUrlResponse.getResponse();
-
-    expect(fetchResponse.status).toBe(202);
-    expect(await fetchResponse.json()).toMatchInlineSnapshot(`
-      {
-        "message": "Malformed request",
-      }
-    `);
+    expect(await fetchResponse.text()).toBe("Unhandled error");
   });
 });

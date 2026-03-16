@@ -1,20 +1,19 @@
-import { SaleorApiUrl } from "@saleor/apps-domain/saleor-api-url";
-import { BaseError } from "@saleor/errors";
-import { err, ok, Result } from "neverthrow";
+import { type SaleorApiUrl } from "@saleor/apps-domain/saleor-api-url";
+import { err, ok, type Result } from "neverthrow";
 
-import { TransactionProcessSessionEventFragment } from "@/generated/graphql";
+import { type TransactionProcessSessionEventFragment } from "@/generated/graphql";
 import { createLogger } from "@/lib/logger";
-import { AppChannelConfig } from "@/modules/app-config/app-config";
-import { AppConfigRepo } from "@/modules/app-config/repo/app-config-repo";
+import { type AppChannelConfig } from "@/modules/app-config/app-config";
+import { type AppConfigRepo } from "@/modules/app-config/repo/app-config-repo";
 import {
-  AtobaraiChangeTransactionPayload,
+  type AtobaraiChangeTransactionPayload,
   createAtobaraiChangeTransactionPayload,
 } from "@/modules/atobarai/api/atobarai-change-transaction-payload";
 import {
-  AtobaraiTransactionSuccessResponse,
+  type AtobaraiTransactionSuccessResponse,
   CreditCheckResult,
 } from "@/modules/atobarai/api/atobarai-transaction-success-response";
-import { IAtobaraiApiClientFactory } from "@/modules/atobarai/api/types";
+import { type IAtobaraiApiClientFactory } from "@/modules/atobarai/api/types";
 import { createAtobaraiCustomer } from "@/modules/atobarai/atobarai-customer";
 import { createAtobaraiDeliveryDestination } from "@/modules/atobarai/atobarai-delivery-destination";
 import { TransactionGoodBuilder } from "@/modules/atobarai/atobarai-goods/transaction-goods-builder";
@@ -30,15 +29,12 @@ import {
 } from "@/modules/transaction-result/charge-result";
 
 import { BaseUseCase } from "../base-use-case";
-import { AppIsNotConfiguredResponse, MalformedRequestResponse } from "../saleor-webhook-responses";
-import { AtobaraiFailureTransactionError } from "../use-case-errors";
+import { type AppIsNotConfiguredResponse } from "../saleor-webhook-responses";
+import { AtobaraiFailureTransactionError, InvalidEventValidationError } from "../use-case-errors";
 import { TransactionProcessSessionUseCaseResponse } from "./use-case-response";
 
 type UseCaseExecuteResult = Promise<
-  Result<
-    TransactionProcessSessionUseCaseResponse,
-    AppIsNotConfiguredResponse | MalformedRequestResponse
-  >
+  Result<TransactionProcessSessionUseCaseResponse, AppIsNotConfiguredResponse>
 >;
 
 export class TransactionProcessSessionUseCase extends BaseUseCase {
@@ -130,12 +126,22 @@ export class TransactionProcessSessionUseCase extends BaseUseCase {
   }): UseCaseExecuteResult {
     const { appId, saleorApiUrl, event } = params;
 
+    // TODO Is missing issuedAt invalid payload? Isn't it Saleor error?
     if (!event.issuedAt) {
       this.logger.warn("Missing issuedAt in event", {
         event,
       });
 
-      return err(new MalformedRequestResponse(new BaseError("Missing issuedAt in event")));
+      return ok(
+        new TransactionProcessSessionUseCaseResponse.Failure({
+          error: new InvalidEventValidationError("Missing issuedAt in event", {
+            props: {
+              publicMessage: "Missing issuedAt in event",
+            },
+          }),
+          transactionResult: new ChargeFailureResult(),
+        }),
+      );
     }
 
     const atobaraiConfigResult = await this.getAtobaraiConfigForChannel({

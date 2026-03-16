@@ -1,22 +1,7 @@
-/* eslint-disable no-console */
-
 import { withSentryConfig } from "@sentry/nextjs";
-import { NextConfig } from "next";
-import { z } from "zod";
-
-const RequiredEnvs = z.object({
-  APL: z.string().min(1),
-});
+import { type NextConfig } from "next";
 
 const nextConfig = (): NextConfig => {
-  const parsedEnvs = RequiredEnvs.safeParse(process.env);
-
-  if (!parsedEnvs.success) {
-    console.error("🚫 Missing required env variables, see message below");
-    console.error(parsedEnvs.error.issues);
-    process.exit(1);
-  }
-
   return {
     reactStrictMode: true,
     transpilePackages: [
@@ -30,6 +15,12 @@ const nextConfig = (): NextConfig => {
       optimizePackageImports: ["@sentry/nextjs", "@sentry/node"],
     },
     bundlePagesRouterDependencies: true,
+    serverExternalPackages: [
+      "@aws-sdk/client-dynamodb",
+      "@aws-sdk/lib-dynamodb",
+      "@aws-sdk/util-dynamodb",
+      "dynamodb-toolbox",
+    ],
     webpack: (config, { isServer }) => {
       if (isServer) {
         // Ignore opentelemetry warnings - https://github.com/open-telemetry/opentelemetry-js/issues/4173

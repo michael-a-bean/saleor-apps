@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import { mockedSaleorChannelId } from "@/__tests__/mocks/saleor/mocked-saleor-channel-id";
 import { mockedTransactionInitializeSessionEvent } from "@/__tests__/mocks/saleor-events/mocked-transaction-initialize-session-event";
-import { SourceObjectFragment } from "@/generated/graphql";
+import { type SourceObjectFragment } from "@/generated/graphql";
 
-import { AtobaraiCustomer, createAtobaraiCustomer } from "./atobarai-customer";
+import { type AtobaraiCustomer, createAtobaraiCustomer } from "./atobarai-customer";
 
 describe("createAtobaraiCustomer", () => {
   const mockedCheckoutSourceObject = {
@@ -140,6 +140,32 @@ describe("createAtobaraiCustomer", () => {
 
     expect(() => createAtobaraiCustomer(eventWithEmptyPhone)).toThrowErrorMatchingInlineSnapshot(
       `[AtobaraiCustomerMissingDataError: Phone number is required to create AtobaraiCustomer]`,
+    );
+  });
+
+  it("should throw MissingDataError when email format is invalid", () => {
+    const eventWithInvalidEmail = {
+      sourceObject: {
+        ...mockedCheckoutSourceObject,
+        email: "invalid-email-format",
+      },
+    };
+
+    expect(() => createAtobaraiCustomer(eventWithInvalidEmail)).toThrowErrorMatchingInlineSnapshot(
+      `
+      [AtobaraiCustomerMissingDataError: [
+        {
+          "validation": "email",
+          "code": "invalid_string",
+          "message": "Invalid email",
+          "path": [
+            "email"
+          ]
+        }
+      ]
+      ZodValidationError: Validation error: Invalid email at "email"
+      Invalid customer data: Validation error: Invalid email at "email"]
+    `,
     );
   });
 

@@ -1,7 +1,8 @@
 import { BaseError } from "@saleor/errors";
 import { z } from "zod";
 
-import { SourceObjectFragment } from "@/generated/graphql";
+import { type SourceObjectFragment } from "@/generated/graphql";
+import { zodReadableError } from "@/lib/zod-readable-error";
 import { AtobaraiAddressFormatter } from "@/modules/atobarai/atobarai-address-formatter";
 
 import { formatCustomerName, formatPhone } from "./atobarai-address-helpers";
@@ -45,13 +46,24 @@ export const createAtobaraiDeliveryDestination = (event: {
     );
   }
 
-  return AtobaraiDeliveryDestinationSchema.parse({
+  const parseResult = AtobaraiDeliveryDestinationSchema.safeParse({
     customer_name: formatCustomerName(shippingAddress),
     company_name: shippingAddress.companyName,
     zip_code: shippingAddress.postalCode,
     address: new AtobaraiAddressFormatter().formatAddress(shippingAddress),
     tel: formatPhone(shippingAddress.phone),
   });
+
+  if (!parseResult.success) {
+    const readableError = zodReadableError(parseResult.error);
+
+    throw new AtobaraiDeliveryDestinationMissingDataError(
+      `Invalid delivery destination data: ${readableError.message}`,
+      { cause: readableError },
+    );
+  }
+
+  return parseResult.data;
 };
 
 export type AtobaraiDeliveryDestination = z.infer<typeof AtobaraiDeliveryDestinationSchema>;

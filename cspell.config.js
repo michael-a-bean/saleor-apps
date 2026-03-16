@@ -31,6 +31,7 @@ export default {
     },
   ],
   words: [
+    "retryable",
     "atobarai",
     "avalara",
     "avatax",
@@ -93,6 +94,9 @@ export default {
     "etched",
     "cooldown",
     "supertypes",
+    "Neue",
+    "Segoe",
+    "Undiscounted",
   ],
   language: "en-US",
   useGitignore: true,

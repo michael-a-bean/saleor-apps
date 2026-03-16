@@ -1,4 +1,4 @@
-import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
+import { type DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { Table } from "dynamodb-toolbox";
 
 import { env } from "@/lib/env";
@@ -63,7 +63,10 @@ export class DynamoMainTable extends Table<PartitionKey, SortKey> {
   }
 }
 
-const client = createDynamoDBClient();
+const client = createDynamoDBClient({
+  connectionTimeout: env.DYNAMODB_CONNECTION_TIMEOUT_MS,
+  requestTimeout: env.DYNAMODB_REQUEST_TIMEOUT_MS,
+});
 const documentClient = createDynamoDBDocumentClient(client);
 
 export const dynamoMainTable = DynamoMainTable.create({

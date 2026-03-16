@@ -1,7 +1,7 @@
-import { TRPCClientErrorLike } from "@trpc/client";
-import { FieldValues, UseFormSetError } from "react-hook-form";
+import { type TRPCClientErrorLike } from "@trpc/client";
+import { type FieldValues, type UseFormSetError } from "react-hook-form";
 
-import { AppRouter } from "../modules/trpc/trpc-app-router";
+import type { AppRouter } from "../modules/trpc/trpc-app-router";
 
 type SetBackendErrorsProps<T extends FieldValues = FieldValues> = {
   error: TRPCClientErrorLike<AppRouter>;
@@ -20,7 +20,7 @@ export function setBackendErrors<T extends FieldValues = FieldValues>({
   for (const fieldName in fieldErrors) {
     for (const message of fieldErrors[fieldName] || []) {
       isFieldErrorSet = true;
-      if (!!setError) {
+      if (setError) {
         setError(fieldName as keyof UseFormSetError<T>, {
           type: "manual",
           message,

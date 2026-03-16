@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { mockedRefundRequestedEvent } from "@/__tests__/mocks/saleor-events/mocked-refund-requested-event";
-import { TransactionRefundRequestedEventFragment } from "@/generated/graphql";
+import { type TransactionRefundRequestedEventFragment } from "@/generated/graphql";
 
 import { RefundEventParser } from "./refund-event-parser";
 
@@ -26,6 +26,7 @@ describe("RefundEventParser", () => {
         sourceObject: mockedRefundRequestedEvent.transaction?.order,
         grantedRefund: mockedRefundRequestedEvent.grantedRefund,
         currency: mockedRefundRequestedEvent.action.currency,
+        transactionTotalCharged: mockedRefundRequestedEvent.transaction?.chargedAmount.amount,
       });
     });
 
@@ -38,13 +39,9 @@ describe("RefundEventParser", () => {
 
       const result = parser.parse(invalidEvent);
 
-      expect(result._unsafeUnwrapErr()).toMatchInlineSnapshot(`
-        MalformedRequestResponse {
-          "error": [BaseError: Refund amount is required],
-          "message": "Malformed request",
-          "statusCode": 202,
-        }
-      `);
+      expect(result._unsafeUnwrapErr()).toMatchInlineSnapshot(
+        `[InvalidEventValidationError: Refund amount is required]`,
+      );
     });
 
     it("should return error when PSP reference is empty", () => {
@@ -58,13 +55,9 @@ describe("RefundEventParser", () => {
 
       const result = parser.parse(invalidEvent);
 
-      expect(result._unsafeUnwrapErr()).toMatchInlineSnapshot(`
-        MalformedRequestResponse {
-          "error": [BaseError: PSP reference is required],
-          "message": "Malformed request",
-          "statusCode": 202,
-        }
-      `);
+      expect(result._unsafeUnwrapErr()).toMatchInlineSnapshot(
+        `[InvalidEventValidationError: PSP reference is required]`,
+      );
     });
 
     it("should return error when transaction token is empty", () => {
@@ -78,13 +71,9 @@ describe("RefundEventParser", () => {
 
       const result = parser.parse(invalidEvent);
 
-      expect(result._unsafeUnwrapErr()).toMatchInlineSnapshot(`
-        MalformedRequestResponse {
-          "error": [BaseError: Transaction token is required],
-          "message": "Malformed request",
-          "statusCode": 202,
-        }
-      `);
+      expect(result._unsafeUnwrapErr()).toMatchInlineSnapshot(
+        `[InvalidEventValidationError: Transaction token is required]`,
+      );
     });
 
     it("should return error when issued at date is missing", () => {
@@ -95,13 +84,28 @@ describe("RefundEventParser", () => {
 
       const result = parser.parse(invalidEvent);
 
-      expect(result._unsafeUnwrapErr()).toMatchInlineSnapshot(`
-        MalformedRequestResponse {
-          "error": [BaseError: Issued at date is required],
-          "message": "Malformed request",
-          "statusCode": 202,
-        }
-      `);
+      expect(result._unsafeUnwrapErr()).toMatchInlineSnapshot(
+        `[InvalidEventValidationError: Issued at date is required]`,
+      );
+    });
+
+    it("should return error when transaction charged amount is missing", () => {
+      const invalidEvent: TransactionRefundRequestedEventFragment = {
+        ...mockedRefundRequestedEvent,
+        transaction: {
+          ...mockedRefundRequestedEvent.transaction,
+          chargedAmount: {
+            // @ts-expect-error - testing invalid input
+            amount: null,
+          },
+        },
+      };
+
+      const result = parser.parse(invalidEvent);
+
+      expect(result._unsafeUnwrapErr()).toMatchInlineSnapshot(
+        `[InvalidEventValidationError: Transaction charged amount is required]`,
+      );
     });
   });
 });

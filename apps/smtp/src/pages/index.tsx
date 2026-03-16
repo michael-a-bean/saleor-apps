@@ -1,6 +1,8 @@
 import { useAppBridge } from "@saleor/app-sdk/app-bridge";
 import { isInIframe } from "@saleor/apps-shared/is-in-iframe";
-import { NextPage } from "next";
+import { SkeletonLayout } from "@saleor/apps-ui";
+import { Box } from "@saleor/macaw-ui";
+import { type NextPage } from "next";
 import { useRouter } from "next/router";
 import { useEffect } from "react";
 import { useIsMounted } from "usehooks-ts";
@@ -20,7 +22,11 @@ const IndexPage: NextPage = () => {
   }, [isMounted, appBridgeState?.ready, replace]);
 
   if (isInIframe()) {
-    return <p>Loading</p>;
+    return (
+      <Box padding={4}>
+        <SkeletonLayout.Section />
+      </Box>
+    );
   }
 
   return (

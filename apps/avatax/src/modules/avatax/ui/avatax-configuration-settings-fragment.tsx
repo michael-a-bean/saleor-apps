@@ -3,7 +3,7 @@ import { Input } from "@saleor/react-hook-form-macaw";
 import { useFormContext } from "react-hook-form";
 
 import { AppToggle } from "../../ui/app-toggle";
-import { AvataxConfig } from "../avatax-connection-schema";
+import { type AvataxConfig } from "../avatax-connection-schema";
 import { useAvataxConfigurationStatus } from "./configuration-status";
 import { HelperText } from "./form-helper-text";
 import { FormSection } from "./form-section";
@@ -51,6 +51,25 @@ export const AvataxConfigurationSettingsFragment = () => {
           </HelperText>
         }
         name="isAutocommit"
+      />
+      <AppToggle
+        control={control}
+        label="Write tax exemption status to metadata"
+        disabled={disabled}
+        helperText={
+          <HelperText>
+            When enabled, the app will update checkout or order metadata after tax calculation with
+            information whether tax exemption was applied. This can be used by the storefront to
+            show a badge or similar or track reason of exempt order.{" "}
+            <TextLink
+              newTab
+              href="https://docs.saleor.io/developer/app-store/apps/avatax/configuration#tax-exemption-status-metadata"
+            >
+              Read docs
+            </TextLink>
+          </HelperText>
+        }
+        name="isExemptionStatusPublicMetadataEnabled"
       />
       <div>
         <Input

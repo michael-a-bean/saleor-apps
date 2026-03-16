@@ -1,4 +1,4 @@
-import { TransactionRefundRequestedEventFragment } from "@/generated/graphql";
+import { type TransactionRefundRequestedEventFragment } from "@/generated/graphql";
 
 import { mockedAtobaraiTransactionId } from "../atobarai/mocked-atobarai-transaction-id";
 import { mockedSaleorChannelId } from "../saleor/mocked-saleor-channel-id";
@@ -11,6 +11,9 @@ export const mockedRefundRequestedEvent = {
   transaction: {
     pspReference: mockedAtobaraiTransactionId,
     token: "saleor-transaction-token",
+    chargedAmount: {
+      amount: 3_334,
+    },
     order: {
       __typename: "Order",
       id: "order-id",

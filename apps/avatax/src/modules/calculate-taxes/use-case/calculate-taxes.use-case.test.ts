@@ -1,23 +1,24 @@
-import { AuthData } from "@saleor/app-sdk/APL";
-import { err, ok, Result } from "neverthrow";
+import { type AuthData } from "@saleor/app-sdk/APL";
+import { err, ok, type Result } from "neverthrow";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AvataxCalculateTaxesPayloadLinesTransformer } from "@/modules/avatax/calculate-taxes/avatax-calculate-taxes-payload-lines-transformer";
 import { AvataxCalculateTaxesResponseTransformer } from "@/modules/avatax/calculate-taxes/avatax-calculate-taxes-response-transformer";
 import { AvataxCalculateTaxesTaxCodeMatcher } from "@/modules/avatax/calculate-taxes/avatax-calculate-taxes-tax-code-matcher";
 import { SHIPPING_ITEM_CODE } from "@/modules/avatax/calculate-taxes/avatax-shipping-line";
-import { ILogWriter, NoopLogWriter } from "@/modules/client-logs/log-writer";
+import { type ILogWriter, NoopLogWriter } from "@/modules/client-logs/log-writer";
 import {
   AvataxGetTaxSystemError,
   AvataxGetTaxWrongUserInputError,
+  AvataxTimeoutError,
 } from "@/modules/taxes/tax-error";
 
 import { BaseError } from "../../../error";
 import { AppConfig } from "../../../lib/app-config";
-import { AppConfigExtractor, IAppConfigExtractor } from "../../../lib/app-config-extractor";
+import { AppConfigExtractor, type IAppConfigExtractor } from "../../../lib/app-config-extractor";
 import { AvataxClient } from "../../avatax/avatax-client";
 import { AvataxSdkClientFactory } from "../../avatax/avatax-sdk-client-factory";
-import { CalculateTaxesPayload } from "../../webhooks/payloads/calculate-taxes-payload";
+import { type CalculateTaxesPayload } from "../../webhooks/payloads/calculate-taxes-payload";
 import { CalculateTaxesUseCase } from "./calculate-taxes.use-case";
 
 const mockGetAppConfig = vi.fn<() => Result<AppConfig, (typeof BaseError)["prototype"]>>();
@@ -139,6 +140,7 @@ const getMockedAppConfig = (): AppConfig => {
           isSandbox: false,
           name: "config",
           isAutocommit: false,
+          isExemptionStatusPublicMetadataEnabled: false,
           isDocumentRecordingEnabled: false,
           shippingTaxCode: "123",
         },
@@ -249,7 +251,15 @@ describe("CalculateTaxesUseCase", () => {
   it("Calculates proper discount (extra field with sum of SUBTOTAL-type amounts) and properly reduces price of shipping line", async () => {
     mockGetAppConfig.mockImplementationOnce(() => ok(getMockedAppConfig()));
 
-    mockedAvataxClient.createTransaction.mockResolvedValueOnce(Promise.resolve(ok({ lines: [] })));
+    mockedAvataxClient.createTransaction.mockResolvedValueOnce(
+      Promise.resolve(
+        ok({
+          lines: [],
+          totalExempt: 0,
+          summary: [],
+        }),
+      ),
+    );
 
     const payload = getPayloadWithDiscounts();
 
@@ -278,7 +288,15 @@ describe("CalculateTaxesUseCase", () => {
   it("Writes successful log if taxes calculated to Log Writer", async () => {
     mockGetAppConfig.mockImplementationOnce(() => ok(getMockedAppConfig()));
 
-    mockedAvataxClient.createTransaction.mockResolvedValueOnce(Promise.resolve(ok({ lines: [] })));
+    mockedAvataxClient.createTransaction.mockResolvedValueOnce(
+      Promise.resolve(
+        ok({
+          lines: [],
+          totalExempt: 0,
+          summary: [],
+        }),
+      ),
+    );
 
     const payload = getPayloadWithDiscounts();
 
@@ -383,6 +401,46 @@ describe("CalculateTaxesUseCase", () => {
 
       expect(loggerErrorSpy).not.toHaveBeenCalled();
       expect(loggerWarnSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("Timeout error handling", () => {
+    it("Returns TimeoutError when AvaTax API times out", async () => {
+      mockGetAppConfig.mockImplementationOnce(() => ok(getMockedAppConfig()));
+
+      const timeoutError = new AvataxTimeoutError("AvaTax API request timed out", {
+        cause: new Error("timeout"),
+      });
+
+      mockedAvataxClient.createTransaction.mockRejectedValueOnce(timeoutError);
+
+      const result = await instance.calculateTaxes(getBasePayload(), getMockAuthData());
+
+      const error = result._unsafeUnwrapErr();
+
+      expect(error).toBeInstanceOf(CalculateTaxesUseCase.TimeoutError);
+
+      expect(error).toMatchInlineSnapshot(`
+        [TimeoutError: AvataxTimeoutError: timeout
+        AvaTax API request timed out
+        AvaTax API request timed out]
+      `);
+    });
+
+    it("Does not return FailedCalculatingTaxesError for timeout errors", async () => {
+      mockGetAppConfig.mockImplementationOnce(() => ok(getMockedAppConfig()));
+
+      const timeoutError = new AvataxTimeoutError("AvaTax API request timed out", {
+        cause: new Error("timeout"),
+      });
+
+      mockedAvataxClient.createTransaction.mockRejectedValueOnce(timeoutError);
+
+      const result = await instance.calculateTaxes(getBasePayload(), getMockAuthData());
+
+      const error = result._unsafeUnwrapErr();
+
+      expect(error).not.toBeInstanceOf(CalculateTaxesUseCase.FailedCalculatingTaxesError);
     });
   });
 });

@@ -11,18 +11,20 @@ import { EmailCompiler } from "../services/email-compiler";
 import { HandlebarsTemplateCompiler } from "../services/handlebars-template-compiler";
 import { HtmlToTextCompiler } from "../services/html-to-text-compiler";
 import { MjmlCompiler } from "../services/mjml-compiler";
-import { TemplateErrorCode, templateErrorCodes } from "../services/template-error-codes";
+import { type TemplateErrorCode, templateErrorCodes } from "../services/template-error-codes";
 import {
   smtpConfigurationIdInputSchema,
   smtpCreateConfigurationInputSchema,
   smtpGetConfigurationsInputSchema,
   smtpGetEventConfigurationInputSchema,
   smtpUpdateBasicInformationSchema,
+  smtpUpdateBrandingSchema,
   smtpUpdateEventArraySchema,
   smtpUpdateEventSchema,
   smtpUpdateSenderSchema,
   smtpUpdateSmtpSchema,
 } from "./smtp-config-input-schema";
+import { getFallbackSmtpConfigSchema } from "./smtp-config-schema";
 import { SmtpConfigurationService } from "./smtp-configuration.service";
 import { smtpDefaultEmptyConfigurations } from "./smtp-default-empty-configurations";
 
@@ -47,30 +49,35 @@ export const throwTrpcErrorFromConfigurationServiceError = (
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Configuration not found.",
+          cause: error,
         });
 
       case SmtpConfigurationService.EventConfigNotFoundError:
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Event configuration not found.",
+          cause: error,
         });
 
       case SmtpConfigurationService.CantFetchConfigError:
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Can't fetch configuration.",
+          cause: error,
         });
 
       case SmtpConfigurationService.WrongSaleorVersionError:
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Feature you are trying to use is not supported in this version of Saleor.",
+          cause: error,
         });
 
       case SmtpConfigurationService.TemplateValidationError:
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: error.message,
+          cause: error,
         });
     }
   }
@@ -78,6 +85,7 @@ export const throwTrpcErrorFromConfigurationServiceError = (
   throw new TRPCError({
     code: "INTERNAL_SERVER_ERROR",
     message: "Internal server error",
+    cause: error,
   });
 };
 
@@ -282,6 +290,19 @@ export const smtpConfigurationRouter = router({
       );
     }),
 
+  updateBranding: protectedWithConfigurationServices
+    .input(smtpUpdateBrandingSchema)
+    .mutation(async ({ ctx, input }) => {
+      const logger = createLogger("smtpConfigurationRouter", { saleorApiUrl: ctx.saleorApiUrl });
+
+      logger.debug(input, "smtpConfigurationRouter.updateBranding called");
+
+      return await ctx.smtpConfigurationService.updateConfiguration({ ...input }).match(
+        (v) => v,
+        (e) => throwTrpcErrorFromConfigurationServiceError(e),
+      );
+    }),
+
   updateChannels: protectedWithConfigurationServices
     .input(updateChannelsInputSchema)
     .mutation(async ({ ctx, input }) => {
@@ -356,5 +377,34 @@ export const smtpConfigurationRouter = router({
       } catch (e) {
         return throwTrpcErrorFromConfigurationServiceError(e);
       }
+    }),
+  getFallbackSmtpSettings: protectedWithConfigurationServices.query(async ({ ctx }) => {
+    return ctx.smtpConfigurationService.getConfigurationRoot().match(
+      (v) => ({
+        useSaleorSmtpFallback: v.useSaleorSmtpFallback,
+      }),
+      (e) => throwTrpcErrorFromConfigurationServiceError(e),
+    );
+  }),
+  isFallbackSmtpConfigured: protectedWithConfigurationServices.query(async () => {
+    const fallbackConfig = getFallbackSmtpConfigSchema();
+
+    return { isConfigured: fallbackConfig !== null };
+  }),
+  updateFallbackSmtpSettings: protectedWithConfigurationServices
+    .input(
+      z.object({
+        useSaleorSmtpFallback: z.boolean(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      return ctx.smtpConfigurationService
+        .updateFallbackSmtpSettings({
+          useSaleorSmtpFallback: input.useSaleorSmtpFallback,
+        })
+        .match(
+          (v) => v,
+          (e) => throwTrpcErrorFromConfigurationServiceError(e),
+        );
     }),
 });

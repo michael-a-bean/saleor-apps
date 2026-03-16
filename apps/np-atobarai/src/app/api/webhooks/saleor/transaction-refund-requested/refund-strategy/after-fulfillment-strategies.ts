@@ -1,15 +1,16 @@
 import { BaseError } from "@saleor/errors";
-import { err, ok, Result } from "neverthrow";
+import { err, ok, type Result } from "neverthrow";
 
+import { type InvalidEventValidationError } from "@/app/api/webhooks/saleor/use-case-errors";
 import { createLogger } from "@/lib/logger";
 import { createAtobaraiCancelTransactionPayload } from "@/modules/atobarai/api/atobarai-cancel-transaction-payload";
 import { createAtobaraiFulfillmentReportPayload } from "@/modules/atobarai/api/atobarai-fulfillment-report-payload";
 import {
-  AtobaraiRegisterTransactionPayload,
+  type AtobaraiRegisterTransactionPayload,
   createAtobaraiRegisterTransactionPayload,
 } from "@/modules/atobarai/api/atobarai-register-transaction-payload";
 import { CreditCheckResult } from "@/modules/atobarai/api/atobarai-transaction-success-response";
-import { IAtobaraiApiClient } from "@/modules/atobarai/api/types";
+import { type IAtobaraiApiClient } from "@/modules/atobarai/api/types";
 import { createAtobaraiCustomer } from "@/modules/atobarai/atobarai-customer";
 import { createAtobaraiDeliveryDestination } from "@/modules/atobarai/atobarai-delivery-destination";
 import {
@@ -25,9 +26,8 @@ import {
   RefundSuccessResult,
 } from "@/modules/transaction-result/refund-result";
 
-import { MalformedRequestResponse } from "../../saleor-webhook-responses";
 import { TransactionRefundRequestedUseCaseResponse } from "../use-case-response";
-import { AfterFulfillmentRefundContext, AfterFulfillmentRefundStrategy } from "./types";
+import { type AfterFulfillmentRefundContext, type AfterFulfillmentRefundStrategy } from "./types";
 
 /**
  * Handles case when there full refund (whole amount) after fulfillment has been sent.
@@ -37,7 +37,12 @@ export class AfterFulfillmentFullRefundStrategy implements AfterFulfillmentRefun
 
   async execute(
     context: AfterFulfillmentRefundContext,
-  ): Promise<Result<TransactionRefundRequestedUseCaseResponse, MalformedRequestResponse>> {
+  ): Promise<
+    Result<
+      TransactionRefundRequestedUseCaseResponse,
+      InstanceType<typeof InvalidEventValidationError>
+    >
+  > {
     const { atobaraiTransactionId, apiClient } = context;
 
     const payload = createAtobaraiCancelTransactionPayload({
@@ -85,7 +90,12 @@ export class AfterFulfillmentPartialRefundWithLineItemsStrategy
 
   async execute(
     context: AfterFulfillmentRefundContext,
-  ): Promise<Result<TransactionRefundRequestedUseCaseResponse, MalformedRequestResponse>> {
+  ): Promise<
+    Result<
+      TransactionRefundRequestedUseCaseResponse,
+      InstanceType<typeof InvalidEventValidationError>
+    >
+  > {
     const {
       parsedEvent,
       appConfig,
@@ -234,7 +244,12 @@ export class AfterFulfillmentPartialRefundWithoutLineItemsStrategy
 
   async execute(
     context: AfterFulfillmentRefundContext,
-  ): Promise<Result<TransactionRefundRequestedUseCaseResponse, MalformedRequestResponse>> {
+  ): Promise<
+    Result<
+      TransactionRefundRequestedUseCaseResponse,
+      InstanceType<typeof InvalidEventValidationError>
+    >
+  > {
     const {
       parsedEvent,
       appConfig,

@@ -1,12 +1,12 @@
 import { SpanKind, SpanStatusCode } from "@opentelemetry/api";
 import { ATTR_PEER_SERVICE } from "@opentelemetry/semantic-conventions/incubating";
 import { ObservabilityAttributes } from "@saleor/apps-otel/src/observability-attributes";
-import Avatax from "avatax";
+import type Avatax from "avatax";
 import { DocumentType } from "avatax/lib/enums/DocumentType";
 import { VoidReasonCode } from "avatax/lib/enums/VoidReasonCode";
-import { AddressLocationInfo as AvataxAddress } from "avatax/lib/models/AddressLocationInfo";
-import { CommitTransactionModel } from "avatax/lib/models/CommitTransactionModel";
-import { CreateTransactionModel } from "avatax/lib/models/CreateTransactionModel";
+import { type AddressLocationInfo as AvataxAddress } from "avatax/lib/models/AddressLocationInfo";
+import { type CommitTransactionModel } from "avatax/lib/models/CommitTransactionModel";
+import { type CreateTransactionModel } from "avatax/lib/models/CreateTransactionModel";
 import { fromPromise } from "neverthrow";
 
 import { internalMeter } from "@/lib/otel/metrics";
@@ -15,6 +15,7 @@ import { appExternalTracer } from "@/lib/otel/tracing";
 import { createLogger } from "@/logger";
 import { loggerContext } from "@/logger-context";
 
+import { AvataxTimeoutError } from "../taxes/tax-error";
 import { AvataxErrorsParser } from "./avatax-errors-parser";
 
 export type CommitTransactionArgs = {
@@ -50,6 +51,15 @@ export class AvataxClient {
 
   constructor(private client: Avatax) {}
 
+  private handleError(error: unknown) {
+    // SDK throw inner error, we re-map it to something we can branch from easily
+    if (error instanceof Error && error.message === "timeout") {
+      return new AvataxTimeoutError("AvaTax API request timed out", { cause: error });
+    }
+
+    return this.errorParser.parse(error);
+  }
+
   private getAvaTaxEnviroment() {
     return this.client.baseUrl === "https://sandbox-rest.avatax.com" ? "sandbox" : "production";
   }
@@ -76,7 +86,7 @@ export class AvataxClient {
             model: { createTransactionModel: model },
           }),
           (error) => {
-            return this.errorParser.parse(error);
+            return this.handleError(error);
           },
         )
           .map((response) => {
@@ -138,7 +148,7 @@ export class AvataxClient {
             model: { code: VoidReasonCode.DocVoided },
           }),
           (error) => {
-            const parsedError = this.errorParser.parse(error);
+            const parsedError = this.handleError(error);
 
             this.logger.error("Error voiding transaction", {
               error: parsedError,
@@ -185,7 +195,7 @@ export class AvataxClient {
   }
 
   async validateAddress({ address }: ValidateAddressArgs) {
-    return fromPromise(this.client.resolveAddress(address), this.errorParser.parse);
+    return fromPromise(this.client.resolveAddress(address), (error) => this.handleError(error));
   }
 
   async listTaxCodes({ filter }: { filter: string | null }) {
@@ -194,7 +204,7 @@ export class AvataxClient {
         ...(filter ? { filter: `taxCode contains "${filter}"` } : {}),
       }),
       (error) => {
-        const parsedError = this.errorParser.parse(error);
+        const parsedError = this.handleError(error);
 
         this.logger.error("Failed to call listTaxCodes on Avatax client", {
           error: parsedError,
@@ -206,7 +216,7 @@ export class AvataxClient {
   }
 
   async ping() {
-    return fromPromise(this.client.ping(), this.errorParser.parse);
+    return fromPromise(this.client.ping(), (error) => this.handleError(error));
   }
 
   async getEntityUseCode(useCode: string) {
@@ -226,7 +236,7 @@ export class AvataxClient {
             filter: `code eq ${useCode}`,
           }),
           (error) => {
-            const parsedError = this.errorParser.parse(error);
+            const parsedError = this.handleError(error);
 
             this.logger.error("Failed to get entity use code", {
               error: parsedError,

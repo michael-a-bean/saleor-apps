@@ -1,5 +1,5 @@
 import { verifyJWT } from "@saleor/app-sdk/auth";
-import { Permission } from "@saleor/app-sdk/types";
+import { type Permission } from "@saleor/app-sdk/types";
 import { createGraphQLClient } from "@saleor/apps-shared/create-graphql-client";
 import { TRPCError } from "@trpc/server";
 
@@ -85,7 +85,7 @@ const validateClientToken = middleware(async ({ ctx, next, meta }) => {
         ],
       });
     } catch (e) {
-      logger.debug("JWT verification failed, throwing");
+      logger.error("JWT verification failed, throwing", { error: e });
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
         message: "JWT verification failed",

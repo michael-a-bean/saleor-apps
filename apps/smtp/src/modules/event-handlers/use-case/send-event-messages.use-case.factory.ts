@@ -1,4 +1,4 @@
-import { AuthData } from "@saleor/app-sdk/APL";
+import { type AuthData } from "@saleor/app-sdk/APL";
 
 import { createInstrumentedGraphqlClient } from "../../../lib/create-instrumented-graphql-client";
 import { createSettingsManager } from "../../../lib/metadata-manager";
@@ -26,7 +26,7 @@ export class SendEventMessagesUseCaseFactory {
         new HtmlToTextCompiler(),
         new MjmlCompiler(),
       ),
-      smtpConfigurationService: new SmtpConfigurationService({
+      configService: new SmtpConfigurationService({
         featureFlagService: new FeatureFlagService({ client }),
         metadataManager: new SmtpMetadataManager(
           createSettingsManager(client, authData.appId),

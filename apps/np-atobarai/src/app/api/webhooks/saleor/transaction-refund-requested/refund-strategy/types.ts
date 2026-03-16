@@ -1,13 +1,13 @@
-import { Result } from "neverthrow";
+import { type Result } from "neverthrow";
 
-import { AppChannelConfig } from "@/modules/app-config/app-config";
-import { IAtobaraiApiClient } from "@/modules/atobarai/api/types";
-import { AtobaraiShippingCompanyCode } from "@/modules/atobarai/atobarai-shipping-company-code";
-import { AtobaraiTransactionId } from "@/modules/atobarai/atobarai-transaction-id";
+import { type InvalidEventValidationError } from "@/app/api/webhooks/saleor/use-case-errors";
+import { type AppChannelConfig } from "@/modules/app-config/app-config";
+import { type IAtobaraiApiClient } from "@/modules/atobarai/api/types";
+import { type AtobaraiShippingCompanyCode } from "@/modules/atobarai/atobarai-shipping-company-code";
+import { type AtobaraiTransactionId } from "@/modules/atobarai/atobarai-transaction-id";
 
-import { MalformedRequestResponse } from "../../saleor-webhook-responses";
-import { ParsedRefundEvent } from "../refund-event-parser";
-import { TransactionRefundRequestedUseCaseResponse } from "../use-case-response";
+import { type ParsedRefundEvent } from "../refund-event-parser";
+import { type TransactionRefundRequestedUseCaseResponse } from "../use-case-response";
 
 export interface BeforeFulfillmentRefundContext {
   parsedEvent: ParsedRefundEvent;
@@ -28,11 +28,21 @@ export interface AfterFulfillmentRefundContext {
 export interface BeforeFulfillmentRefundStrategy {
   execute(
     context: BeforeFulfillmentRefundContext,
-  ): Promise<Result<TransactionRefundRequestedUseCaseResponse, MalformedRequestResponse>>;
+  ): Promise<
+    Result<
+      TransactionRefundRequestedUseCaseResponse,
+      InstanceType<typeof InvalidEventValidationError>
+    >
+  >;
 }
 
 export interface AfterFulfillmentRefundStrategy {
   execute(
     context: AfterFulfillmentRefundContext,
-  ): Promise<Result<TransactionRefundRequestedUseCaseResponse, MalformedRequestResponse>>;
+  ): Promise<
+    Result<
+      TransactionRefundRequestedUseCaseResponse,
+      InstanceType<typeof InvalidEventValidationError>
+    >
+  >;
 }

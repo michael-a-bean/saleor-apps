@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { AtobaraiErrorResponse, createAtobaraiErrorResponse } from "./atobarai-error-response";
+import { type AtobaraiErrorResponse, createAtobaraiErrorResponse } from "./atobarai-error-response";
 
 describe("createAtobaraiRegisterTransactionErrorResponse", () => {
   it("should successfully parse a valid error response", () => {
@@ -54,13 +54,14 @@ describe("createAtobaraiRegisterTransactionErrorResponse", () => {
     `);
   });
 
-  it("should throw ZodError when response is missing errors field", () => {
+  it("should throw validation error when response is missing errors field", () => {
     const rawResponse = {
       results: [],
     };
 
-    expect(() => createAtobaraiErrorResponse(rawResponse)).toThrowErrorMatchingInlineSnapshot(`
-      [ZodError: [
+    expect(() => createAtobaraiErrorResponse(rawResponse)).toThrowErrorMatchingInlineSnapshot(
+      `
+      [AtobaraiErrorResponseValidationError: [
         {
           "code": "invalid_type",
           "expected": "array",
@@ -70,8 +71,11 @@ describe("createAtobaraiRegisterTransactionErrorResponse", () => {
           ],
           "message": "Required"
         }
-      ]]
-    `);
+      ]
+      ZodValidationError: Validation error: Required at "errors"
+      Invalid Atobarai error response format: Validation error: Required at "errors"]
+    `,
+    );
   });
 
   it("shouldn't be assignable without createAtobaraiRegisterTransactionErrorResponse", () => {

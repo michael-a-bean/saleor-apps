@@ -1,5 +1,5 @@
 import { withSentryConfig } from "@sentry/nextjs";
-import { NextConfig } from "next";
+import { type NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
@@ -13,6 +13,12 @@ const nextConfig: NextConfig = {
     optimizePackageImports: ["@sentry/nextjs", "@sentry/node"],
   },
   bundlePagesRouterDependencies: true,
+  serverExternalPackages: [
+    "@aws-sdk/client-dynamodb",
+    "@aws-sdk/lib-dynamodb",
+    "@aws-sdk/util-dynamodb",
+    "dynamodb-toolbox",
+  ],
   webpack: (config, { isServer }) => {
     if (isServer) {
       // Ignore opentelemetry warnings - https://github.com/open-telemetry/opentelemetry-js/issues/4173

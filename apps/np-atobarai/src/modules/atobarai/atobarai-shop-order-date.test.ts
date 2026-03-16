@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { AtobaraiShopOrderDate, createAtobaraiShopOrderDate } from "./atobarai-shop-order-date";
+import {
+  type AtobaraiShopOrderDate,
+  createAtobaraiShopOrderDate,
+} from "./atobarai-shop-order-date";
 
 describe("createAtobaraiShopOrderDate", () => {
   it("should create a valid AtobaraiShopOrderDate from a valid date string", () => {
@@ -9,17 +12,21 @@ describe("createAtobaraiShopOrderDate", () => {
     expect(result).toBe("2025-07-08");
   });
 
-  it("should throw ZodError when input is an empty string", () => {
-    expect(() => createAtobaraiShopOrderDate("")).toThrowErrorMatchingInlineSnapshot(`
-      [ZodError: [
+  it("should throw validation error when input is an empty string", () => {
+    expect(() => createAtobaraiShopOrderDate("")).toThrowErrorMatchingInlineSnapshot(
+      `
+      [AtobaraiShopOrderDateValidationError: [
         {
           "code": "invalid_string",
           "validation": "datetime",
           "message": "Invalid datetime",
           "path": []
         }
-      ]]
-    `);
+      ]
+      ZodValidationError: Validation error: Invalid datetime
+      Invalid shop order date: Validation error: Invalid datetime]
+    `,
+    );
   });
 
   it("shouldn't be assignable without createAtobaraiShopOrderDate", () => {

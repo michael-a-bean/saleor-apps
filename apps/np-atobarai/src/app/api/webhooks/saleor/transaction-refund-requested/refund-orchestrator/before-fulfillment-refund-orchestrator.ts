@@ -1,20 +1,20 @@
 import { BaseError } from "@saleor/errors";
-import { Result } from "neverthrow";
+import { type Result } from "neverthrow";
 
-import { AppChannelConfig } from "@/modules/app-config/app-config";
-import { IAtobaraiApiClient } from "@/modules/atobarai/api/types";
-import { AtobaraiTransactionId } from "@/modules/atobarai/atobarai-transaction-id";
-import { TransactionRecord } from "@/modules/transactions-recording/transaction-record";
+import { type InvalidEventValidationError } from "@/app/api/webhooks/saleor/use-case-errors";
+import { type AppChannelConfig } from "@/modules/app-config/app-config";
+import { type IAtobaraiApiClient } from "@/modules/atobarai/api/types";
+import { type AtobaraiTransactionId } from "@/modules/atobarai/atobarai-transaction-id";
+import { type TransactionRecord } from "@/modules/transactions-recording/transaction-record";
 
-import { MalformedRequestResponse } from "../../saleor-webhook-responses";
-import { ParsedRefundEvent } from "../refund-event-parser";
+import { type ParsedRefundEvent } from "../refund-event-parser";
 import {
   BeforeFulfillmentFullRefundStrategy,
   BeforeFulfillmentPartialRefundWithLineItemsStrategy,
   BeforeFulfillmentPartialRefundWithoutLineItemsStrategy,
 } from "../refund-strategy/before-fulfillment-strategies";
-import { BeforeFulfillmentRefundContext } from "../refund-strategy/types";
-import { TransactionRefundRequestedUseCaseResponse } from "../use-case-response";
+import { type BeforeFulfillmentRefundContext } from "../refund-strategy/types";
+import { type TransactionRefundRequestedUseCaseResponse } from "../use-case-response";
 import { BaseRefundOrchestrator } from "./base-refund-orchestrator";
 
 export class BeforeFulfillmentRefundOrchestrator extends BaseRefundOrchestrator {
@@ -74,7 +74,12 @@ export class BeforeFulfillmentRefundOrchestrator extends BaseRefundOrchestrator 
     atobaraiTransactionId: AtobaraiTransactionId;
     apiClient: IAtobaraiApiClient;
     transactionRecord: TransactionRecord;
-  }): Promise<Result<TransactionRefundRequestedUseCaseResponse, MalformedRequestResponse>> {
+  }): Promise<
+    Result<
+      TransactionRefundRequestedUseCaseResponse,
+      InstanceType<typeof InvalidEventValidationError>
+    >
+  > {
     const context = this.prepareContext({
       parsedEvent,
       appConfig,

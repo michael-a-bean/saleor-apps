@@ -2,16 +2,30 @@ import { err, errAsync, ok, okAsync } from "neverthrow";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BaseError } from "../../../errors";
-import { SmtpConfiguration } from "../../smtp/configuration/smtp-config-schema";
 import {
-  FilterConfigurationsArgs,
-  IGetSmtpConfiguration,
+  getFallbackSmtpConfigSchema,
+  type SmtpConfiguration,
+} from "../../smtp/configuration/smtp-config-schema";
+import {
+  type FilterConfigurationsArgs,
+  type IGetFallbackSmtpEnabled,
+  type IGetSmtpConfiguration,
 } from "../../smtp/configuration/smtp-configuration.service";
-import { CompileArgs, IEmailCompiler } from "../../smtp/services/email-compiler";
-import { ISMTPEmailSender, SendMailArgs } from "../../smtp/services/smtp-email-sender";
-import { MessageEventTypes } from "../message-event-types";
+import { type CompileArgs, type IEmailCompiler } from "../../smtp/services/email-compiler";
+import { type ISMTPEmailSender, type SendMailArgs } from "../../smtp/services/smtp-email-sender";
+import { type MessageEventTypes } from "../message-event-types";
 import { SendEventMessagesUseCase } from "./send-event-messages.use-case";
 import { SendEventMessagesUseCaseFactory } from "./send-event-messages.use-case.factory";
+
+vi.mock("../../smtp/configuration/smtp-config-schema", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../smtp/configuration/smtp-config-schema")>();
+
+  return {
+    ...actual,
+    getFallbackSmtpConfigSchema: vi.fn(() => null),
+  };
+});
 
 const EVENT_TYPE = "ACCOUNT_DELETE" satisfies MessageEventTypes;
 
@@ -49,7 +63,7 @@ class MockSmtpSender implements ISMTPEmailSender {
   sendEmailWithSmtp = this.mockSendEmailMethod;
 }
 
-class MockSmptConfigurationService implements IGetSmtpConfiguration {
+class MockConfigService implements IGetSmtpConfiguration, IGetFallbackSmtpEnabled {
   static getSimpleConfigurationValue = (): SmtpConfiguration => {
     return {
       id: "1",
@@ -75,7 +89,7 @@ class MockSmptConfigurationService implements IGetSmtpConfiguration {
   };
 
   static returnValidSingleConfiguration: IGetSmtpConfiguration["getConfigurations"] = () => {
-    return okAsync([MockSmptConfigurationService.getSimpleConfigurationValue()]);
+    return okAsync([MockConfigService.getSimpleConfigurationValue()]);
   };
 
   static returnEmptyConfigurationsList: IGetSmtpConfiguration["getConfigurations"] = () => {
@@ -95,52 +109,59 @@ class MockSmptConfigurationService implements IGetSmtpConfiguration {
     return okAsync([c1, c2]);
   };
 
+  static returnFallbackEnabled: IGetFallbackSmtpEnabled["getIsFallbackSmtpEnabled"] = () => {
+    return okAsync(true);
+  };
+
+  static returnFallbackDisabled: IGetFallbackSmtpEnabled["getIsFallbackSmtpEnabled"] = () => {
+    return okAsync(false);
+  };
+
+  static returnFallbackError: IGetFallbackSmtpEnabled["getIsFallbackSmtpEnabled"] = () => {
+    return errAsync(new BaseError("Mock error fetching fallback config"));
+  };
+
   mockGetConfigurationsMethod =
     vi.fn<
       (args?: FilterConfigurationsArgs) => ReturnType<IGetSmtpConfiguration["getConfigurations"]>
     >();
 
+  mockGetIsFallbackSmtpEnabledMethod =
+    vi.fn<() => ReturnType<IGetFallbackSmtpEnabled["getIsFallbackSmtpEnabled"]>>();
+
   getConfigurations = this.mockGetConfigurationsMethod;
+  getIsFallbackSmtpEnabled = this.mockGetIsFallbackSmtpEnabledMethod;
 }
 
 describe("SendEventMessagesUseCase", () => {
   let emailCompiler: MockEmailCompiler;
   let emailSender: MockSmtpSender;
-  let smtpConfigurationService: MockSmptConfigurationService;
+  let configService: MockConfigService;
 
   let useCaseInstance: SendEventMessagesUseCase;
 
   beforeEach(() => {
-    /**
-     * Just in case reset mocks if some reference is preserved
-     */
     vi.resetAllMocks();
 
-    /**
-     * Create direct dependencies
-     */
     emailCompiler = new MockEmailCompiler();
     emailSender = new MockSmtpSender();
-    smtpConfigurationService = new MockSmptConfigurationService();
+    configService = new MockConfigService();
 
-    /**
-     * Apply default return values, which can be partially overwritten in tests
-     */
     emailCompiler.mockEmailCompileMethod.mockImplementation(
       MockEmailCompiler.returnSuccessCompiledEmail,
     );
     emailSender.mockSendEmailMethod.mockImplementation(MockSmtpSender.returnEmptyResponse);
-    smtpConfigurationService.mockGetConfigurationsMethod.mockImplementation(
-      MockSmptConfigurationService.returnValidSingleConfiguration,
+    configService.mockGetConfigurationsMethod.mockImplementation(
+      MockConfigService.returnValidSingleConfiguration,
+    );
+    configService.mockGetIsFallbackSmtpEnabledMethod.mockImplementation(
+      MockConfigService.returnFallbackDisabled,
     );
 
-    /**
-     * Create service instance for testing
-     */
     useCaseInstance = new SendEventMessagesUseCase({
       emailCompiler,
       emailSender,
-      smtpConfigurationService,
+      configService,
     });
   });
 
@@ -157,9 +178,12 @@ describe("SendEventMessagesUseCase", () => {
   });
 
   describe("sendEventMessages method", () => {
-    it("Returns error if configurations list is empty", async () => {
-      smtpConfigurationService.mockGetConfigurationsMethod.mockImplementation(
-        MockSmptConfigurationService.returnEmptyConfigurationsList,
+    it("Returns NoOp error if configurations list is empty and fallback is disabled", async () => {
+      configService.mockGetConfigurationsMethod.mockImplementation(
+        MockConfigService.returnEmptyConfigurationsList,
+      );
+      configService.mockGetIsFallbackSmtpEnabledMethod.mockImplementation(
+        MockConfigService.returnFallbackDisabled,
       );
 
       const result = await useCaseInstance.sendEventMessages({
@@ -167,16 +191,17 @@ describe("SendEventMessagesUseCase", () => {
         payload: {},
         channelSlug: "channel-slug",
         recipientEmail: "recipient@test.com",
+        saleorApiUrl: "https://demo.saleor.cloud/graphql/",
       });
 
       expect(result?._unsafeUnwrapErr()[0]).toBeInstanceOf(
-        SendEventMessagesUseCase.MissingAvailableConfigurationError,
+        SendEventMessagesUseCase.FallbackNotConfiguredError,
       );
     });
 
     it("Returns error if failed to fetch configurations", async () => {
-      smtpConfigurationService.mockGetConfigurationsMethod.mockImplementation(
-        MockSmptConfigurationService.returnErrorFetchingConfigurations,
+      configService.mockGetConfigurationsMethod.mockImplementation(
+        MockConfigService.returnErrorFetchingConfigurations,
       );
 
       const result = await useCaseInstance.sendEventMessages({
@@ -184,6 +209,7 @@ describe("SendEventMessagesUseCase", () => {
         payload: {},
         channelSlug: "channel-slug",
         recipientEmail: "recipient@test.com",
+        saleorApiUrl: "https://demo.saleor.cloud/graphql/",
       });
 
       expect(result?._unsafeUnwrapErr()[0]).toBeInstanceOf(
@@ -198,10 +224,262 @@ describe("SendEventMessagesUseCase", () => {
       );
     });
 
+    describe("Fallback SMTP behavior", () => {
+      beforeEach(() => {
+        configService.mockGetConfigurationsMethod.mockImplementation(
+          MockConfigService.returnEmptyConfigurationsList,
+        );
+      });
+
+      it("Sends email with fallback config when enabled and env is configured", async () => {
+        configService.mockGetIsFallbackSmtpEnabledMethod.mockImplementation(
+          MockConfigService.returnFallbackEnabled,
+        );
+
+        vi.mocked(getFallbackSmtpConfigSchema).mockReturnValue({
+          smtpHost: "fallback.smtp.host",
+          smtpPort: "587",
+          smtpUser: "fallback-user",
+          smtpPassword: "fallback-pass",
+          encryption: "TLS",
+          senderName: "Fallback Sender",
+          senderDomain: "example.com",
+          blockedDomains: [],
+        });
+
+        const result = await useCaseInstance.sendEventMessages({
+          event: EVENT_TYPE,
+          payload: {},
+          channelSlug: "channel-slug",
+          recipientEmail: "recipient@test.com",
+          saleorApiUrl: "https://demo.saleor.cloud/graphql/",
+        });
+
+        expect(result.isOk()).toBe(true);
+        expect(emailSender.mockSendEmailMethod).toHaveBeenCalledOnce();
+      });
+
+      it("Blocks sending email to default test domains with fallback SMTP", async () => {
+        configService.mockGetIsFallbackSmtpEnabledMethod.mockImplementation(
+          MockConfigService.returnFallbackEnabled,
+        );
+
+        vi.mocked(getFallbackSmtpConfigSchema).mockReturnValue({
+          smtpHost: "fallback.smtp.host",
+          smtpPort: "587",
+          smtpUser: "fallback-user",
+          smtpPassword: "fallback-pass",
+          encryption: "TLS",
+          senderName: "Fallback Sender",
+          senderDomain: "example.com",
+          blockedDomains: ["example.com"],
+        });
+
+        const result = await useCaseInstance.sendEventMessages({
+          event: EVENT_TYPE,
+          payload: {},
+          channelSlug: "channel-slug",
+          recipientEmail: "user@example.com", // <--- This should be rejected
+          saleorApiUrl: "https://demo.saleor.cloud/graphql/",
+        });
+
+        expect(result?._unsafeUnwrapErr()[0]).toBeInstanceOf(
+          SendEventMessagesUseCase.RejectedTestDomainError,
+        );
+        expect(emailSender.mockSendEmailMethod).not.toHaveBeenCalled();
+      });
+
+      it("Email addresses without domain are rejected", async () => {
+        configService.mockGetIsFallbackSmtpEnabledMethod.mockImplementation(
+          MockConfigService.returnFallbackEnabled,
+        );
+
+        vi.mocked(getFallbackSmtpConfigSchema).mockReturnValue({
+          smtpHost: "fallback.smtp.host",
+          smtpPort: "587",
+          smtpUser: "fallback-user",
+          smtpPassword: "fallback-pass",
+          encryption: "TLS",
+          senderName: "Fallback Sender",
+          senderDomain: "example.com",
+          blockedDomains: ["example.com"],
+        });
+
+        const result = await useCaseInstance.sendEventMessages({
+          event: EVENT_TYPE,
+          payload: {},
+          channelSlug: "channel-slug",
+          recipientEmail: "recipient", // missing domain
+          saleorApiUrl: "https://demo.saleor.cloud/graphql/",
+        });
+
+        expect(result?._unsafeUnwrapErr()[0]).toBeInstanceOf(
+          SendEventMessagesUseCase.InvalidEmailAddressError,
+        );
+        expect(emailSender.mockSendEmailMethod).not.toHaveBeenCalled();
+      });
+
+      it("Passes X-SES-TENANT header derived from saleorApiUrl when sending via fallback", async () => {
+        configService.mockGetIsFallbackSmtpEnabledMethod.mockImplementation(
+          MockConfigService.returnFallbackEnabled,
+        );
+
+        vi.mocked(getFallbackSmtpConfigSchema).mockReturnValue({
+          smtpHost: "fallback.smtp.host",
+          smtpPort: "587",
+          smtpUser: "fallback-user",
+          smtpPassword: "fallback-pass",
+          encryption: "TLS",
+          senderName: "Fallback Sender",
+          senderDomain: "example.com",
+          blockedDomains: [],
+        });
+
+        await useCaseInstance.sendEventMessages({
+          event: EVENT_TYPE,
+          payload: {},
+          channelSlug: "channel-slug",
+          recipientEmail: "recipient@test.com",
+          saleorApiUrl: "https://demo.saleor.cloud/graphql/",
+        });
+
+        expect(emailSender.mockSendEmailMethod).toHaveBeenCalledWith(
+          expect.objectContaining({
+            mailData: expect.objectContaining({
+              // Calculated from saleorApiUrl, see TenantName
+              headers: { "X-SES-TENANT": "demo_saleor_cloud" },
+            }),
+          }),
+        );
+      });
+
+      it("Returns NoOp error when fallback is enabled but env is not configured", async () => {
+        configService.mockGetIsFallbackSmtpEnabledMethod.mockImplementation(
+          MockConfigService.returnFallbackEnabled,
+        );
+
+        vi.mocked(getFallbackSmtpConfigSchema).mockReturnValue(null);
+
+        const result = await useCaseInstance.sendEventMessages({
+          event: EVENT_TYPE,
+          payload: {},
+          channelSlug: "channel-slug",
+          recipientEmail: "recipient@test.com",
+          saleorApiUrl: "https://demo.saleor.cloud/graphql/",
+        });
+
+        expect(result?._unsafeUnwrapErr()[0]).toBeInstanceOf(
+          SendEventMessagesUseCase.FallbackNotConfiguredError,
+        );
+      });
+
+      it("Returns NoOp error when fallback check returns an error", async () => {
+        configService.mockGetIsFallbackSmtpEnabledMethod.mockImplementation(
+          MockConfigService.returnFallbackError,
+        );
+
+        const result = await useCaseInstance.sendEventMessages({
+          event: EVENT_TYPE,
+          payload: {},
+          channelSlug: "channel-slug",
+          recipientEmail: "recipient@test.com",
+          saleorApiUrl: "https://demo.saleor.cloud/graphql/",
+        });
+
+        expect(result?._unsafeUnwrapErr()[0]).toBeInstanceOf(
+          SendEventMessagesUseCase.FallbackNotConfiguredError,
+        );
+      });
+
+      it("Returns FallbackNotConfiguredError when saleorApiUrl is invalid and FallbackSenderEmail throws", async () => {
+        configService.mockGetIsFallbackSmtpEnabledMethod.mockImplementation(
+          MockConfigService.returnFallbackEnabled,
+        );
+
+        vi.mocked(getFallbackSmtpConfigSchema).mockReturnValue({
+          smtpHost: "fallback.smtp.host",
+          smtpPort: "587",
+          smtpUser: "fallback-user",
+          smtpPassword: "fallback-pass",
+          encryption: "TLS",
+          senderName: "Fallback Sender",
+          senderDomain: "example.com",
+          blockedDomains: [],
+        });
+
+        const result = await useCaseInstance.sendEventMessages({
+          event: EVENT_TYPE,
+          payload: {},
+          channelSlug: "channel-slug",
+          recipientEmail: "recipient@test.com",
+          saleorApiUrl: "not-a-valid-url",
+        });
+
+        expect(result.isErr()).toBe(true);
+        expect(result._unsafeUnwrapErr()[0]).toBeInstanceOf(
+          SendEventMessagesUseCase.FallbackNotConfiguredError,
+        );
+      });
+
+      it("Uses custom configurations when available, regardless of fallback setting", async () => {
+        configService.mockGetConfigurationsMethod.mockImplementation(
+          MockConfigService.returnValidSingleConfiguration,
+        );
+        configService.mockGetIsFallbackSmtpEnabledMethod.mockImplementation(
+          MockConfigService.returnFallbackEnabled,
+        );
+
+        const result = await useCaseInstance.sendEventMessages({
+          event: EVENT_TYPE,
+          payload: {},
+          channelSlug: "channel-slug",
+          recipientEmail: "recipient@test.com",
+          saleorApiUrl: "https://demo.saleor.cloud/graphql/",
+        });
+
+        expect(result.isOk()).toBe(true);
+        expect(emailSender.mockSendEmailMethod).toHaveBeenCalledOnce();
+        // Fallback should not be checked when custom configs exist
+        expect(configService.mockGetIsFallbackSmtpEnabledMethod).not.toHaveBeenCalled();
+      });
+
+      it("Uses default templates when sending via fallback", async () => {
+        configService.mockGetIsFallbackSmtpEnabledMethod.mockImplementation(
+          MockConfigService.returnFallbackEnabled,
+        );
+
+        vi.mocked(getFallbackSmtpConfigSchema).mockReturnValue({
+          smtpHost: "fallback.smtp.host",
+          smtpPort: "587",
+          smtpUser: "fallback-user",
+          smtpPassword: "fallback-pass",
+          encryption: "TLS",
+          senderName: "Fallback Sender",
+          senderDomain: "example.com",
+          blockedDomains: [],
+        });
+
+        await useCaseInstance.sendEventMessages({
+          event: EVENT_TYPE,
+          payload: {},
+          channelSlug: "channel-slug",
+          recipientEmail: "recipient@test.com",
+          saleorApiUrl: "https://demo.saleor.cloud/graphql/",
+        });
+
+        expect(emailCompiler.mockEmailCompileMethod).toHaveBeenCalledWith(
+          expect.objectContaining({
+            senderEmail: "demo@example.com",
+            senderName: "Fallback Sender",
+          }),
+        );
+      });
+    });
+
     describe("Multiple configurations assigned for the same event", () => {
       it("Calls SMTP service to send email for each configuration", async () => {
-        smtpConfigurationService.mockGetConfigurationsMethod.mockImplementation(
-          MockSmptConfigurationService.returnValidTwoConfigurations,
+        configService.mockGetConfigurationsMethod.mockImplementation(
+          MockConfigService.returnValidTwoConfigurations,
         );
 
         await useCaseInstance.sendEventMessages({
@@ -209,14 +487,15 @@ describe("SendEventMessagesUseCase", () => {
           payload: {},
           channelSlug: "channel-slug",
           recipientEmail: "recipient@test.com",
+          saleorApiUrl: "https://demo.saleor.cloud/graphql/",
         });
 
         expect(emailSender.mockSendEmailMethod).toHaveBeenCalledTimes(2);
       });
 
       it("Returns error if at least one configuration fails, even if second one works", async () => {
-        smtpConfigurationService.mockGetConfigurationsMethod.mockImplementation(
-          MockSmptConfigurationService.returnValidTwoConfigurations,
+        configService.mockGetConfigurationsMethod.mockImplementation(
+          MockConfigService.returnValidTwoConfigurations,
         );
 
         emailSender.mockSendEmailMethod.mockImplementationOnce(MockSmtpSender.returnEmptyResponse);
@@ -228,6 +507,7 @@ describe("SendEventMessagesUseCase", () => {
           payload: {},
           channelSlug: "channel-slug",
           recipientEmail: "email@example.com",
+          saleorApiUrl: "https://demo.saleor.cloud/graphql/",
         });
 
         expect(result.isErr()).toBe(true);
@@ -238,19 +518,127 @@ describe("SendEventMessagesUseCase", () => {
       });
     });
 
+    describe("Branding enrichment", () => {
+      it("Enriches payload with branding when config has brandingSiteName", async () => {
+        const configWithBranding = MockConfigService.getSimpleConfigurationValue();
+
+        configWithBranding.brandingSiteName = "My Store";
+
+        configService.mockGetConfigurationsMethod.mockReturnValue(okAsync([configWithBranding]));
+
+        await useCaseInstance.sendEventMessages({
+          event: EVENT_TYPE,
+          payload: { order: { number: "123" } },
+          channelSlug: "channel-slug",
+          recipientEmail: "recipient@test.com",
+          saleorApiUrl: "https://demo.saleor.cloud/graphql/",
+        });
+
+        expect(emailCompiler.mockEmailCompileMethod).toHaveBeenCalledWith(
+          expect.objectContaining({
+            payload: expect.objectContaining({
+              order: { number: "123" },
+              branding: { siteName: "My Store", logoUrl: null },
+            }),
+          }),
+        );
+      });
+
+      it("Enriches payload with branding when config has brandingLogoUrl", async () => {
+        const configWithBranding = MockConfigService.getSimpleConfigurationValue();
+
+        configWithBranding.brandingLogoUrl = "https://example.com/logo.png";
+
+        configService.mockGetConfigurationsMethod.mockReturnValue(okAsync([configWithBranding]));
+
+        await useCaseInstance.sendEventMessages({
+          event: EVENT_TYPE,
+          payload: { order: { number: "456" } },
+          channelSlug: "channel-slug",
+          recipientEmail: "recipient@test.com",
+          saleorApiUrl: "https://demo.saleor.cloud/graphql/",
+        });
+
+        expect(emailCompiler.mockEmailCompileMethod).toHaveBeenCalledWith(
+          expect.objectContaining({
+            payload: expect.objectContaining({
+              order: { number: "456" },
+              branding: { siteName: null, logoUrl: "https://example.com/logo.png" },
+            }),
+          }),
+        );
+      });
+
+      it("Enriches payload with both siteName and logoUrl when both are configured", async () => {
+        const configWithBranding = MockConfigService.getSimpleConfigurationValue();
+
+        configWithBranding.brandingSiteName = "My Store";
+        configWithBranding.brandingLogoUrl = "https://example.com/logo.png";
+
+        configService.mockGetConfigurationsMethod.mockReturnValue(okAsync([configWithBranding]));
+
+        await useCaseInstance.sendEventMessages({
+          event: EVENT_TYPE,
+          payload: { customer: { email: "test@example.com" } },
+          channelSlug: "channel-slug",
+          recipientEmail: "recipient@test.com",
+          saleorApiUrl: "https://demo.saleor.cloud/graphql/",
+        });
+
+        expect(emailCompiler.mockEmailCompileMethod).toHaveBeenCalledWith(
+          expect.objectContaining({
+            payload: expect.objectContaining({
+              customer: { email: "test@example.com" },
+              branding: {
+                siteName: "My Store",
+                logoUrl: "https://example.com/logo.png",
+              },
+            }),
+          }),
+        );
+      });
+
+      it("Does not add branding to payload when config has no branding configured", async () => {
+        // Default mock config has no branding fields set
+        const configWithoutBranding = MockConfigService.getSimpleConfigurationValue();
+
+        configService.mockGetConfigurationsMethod.mockReturnValue(okAsync([configWithoutBranding]));
+
+        await useCaseInstance.sendEventMessages({
+          event: EVENT_TYPE,
+          payload: { order: { number: "789" } },
+          channelSlug: "channel-slug",
+          recipientEmail: "recipient@test.com",
+          saleorApiUrl: "https://demo.saleor.cloud/graphql/",
+        });
+
+        expect(emailCompiler.mockEmailCompileMethod).toHaveBeenCalledWith(
+          expect.objectContaining({
+            payload: { order: { number: "789" } },
+          }),
+        );
+
+        // Verify branding is NOT present in the payload
+        const callArgs = emailCompiler.mockEmailCompileMethod.mock.calls[0][0];
+
+        expect(callArgs.payload).not.toHaveProperty("branding");
+      });
+    });
+
     describe("Single configuration assigned for the event", () => {
       it("Returns error if event is set to not active", async () => {
-        const smtpConfig = MockSmptConfigurationService.getSimpleConfigurationValue();
+        const smtpConfig = MockConfigService.getSimpleConfigurationValue();
 
         smtpConfig.events[0].active = false;
 
-        smtpConfigurationService.mockGetConfigurationsMethod.mockReturnValue(okAsync([smtpConfig]));
+        configService.mockGetConfigurationsMethod.mockReturnValue(okAsync([smtpConfig]));
 
         const result = await useCaseInstance.sendEventMessages({
           event: EVENT_TYPE,
           payload: {},
           channelSlug: "channel-slug",
           recipientEmail: "recipient@test.com",
+          saleorApiUrl: "https://demo.saleor.cloud/graphql/",
         });
 
         expect(result?.isErr()).toBe(true);
@@ -262,19 +650,18 @@ describe("SendEventMessagesUseCase", () => {
       it.each(["senderName", "senderEmail"] as const)(
         "Returns error if configuration '%s' is missing in configuration",
         async (field) => {
-          const smtpConfig = MockSmptConfigurationService.getSimpleConfigurationValue();
+          const smtpConfig = MockConfigService.getSimpleConfigurationValue();
 
           smtpConfig[field] = undefined;
 
-          smtpConfigurationService.mockGetConfigurationsMethod.mockReturnValue(
-            okAsync([smtpConfig]),
-          );
+          configService.mockGetConfigurationsMethod.mockReturnValue(okAsync([smtpConfig]));
 
           const result = await useCaseInstance.sendEventMessages({
             event: EVENT_TYPE,
             payload: {},
             channelSlug: "channel-slug",
             recipientEmail: "recipient@test.com",
+            saleorApiUrl: "https://demo.saleor.cloud/graphql/",
           });
 
           expect(result?.isErr()).toBe(true);
@@ -294,6 +681,7 @@ describe("SendEventMessagesUseCase", () => {
           payload: {},
           channelSlug: "channel-slug",
           recipientEmail: "recipient@test.com",
+          saleorApiUrl: "https://demo.saleor.cloud/graphql/",
         });
 
         expect(result?.isErr()).toBe(true);
@@ -308,6 +696,7 @@ describe("SendEventMessagesUseCase", () => {
           payload: {},
           channelSlug: "channel-slug",
           recipientEmail: "recipient@test.com",
+          saleorApiUrl: "https://demo.saleor.cloud/graphql/",
         });
 
         expect(emailSender.mockSendEmailMethod).toHaveBeenCalledOnce();

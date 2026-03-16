@@ -3,11 +3,12 @@ import { ApplePayPaymentMethod } from "@/modules/stripe/payment-methods/apple-pa
 import { CardPaymentMethod } from "@/modules/stripe/payment-methods/card";
 import { GooglePayPaymentMethod } from "@/modules/stripe/payment-methods/google-pay";
 import { KlarnaPaymentMethod } from "@/modules/stripe/payment-methods/klarna";
+import { LinkPaymentMethod } from "@/modules/stripe/payment-methods/link";
 import { PayPalPaymentMethod } from "@/modules/stripe/payment-methods/paypal";
 import { SepaDebitPaymentMethod } from "@/modules/stripe/payment-methods/sepa-debit";
 import { USBankAccountPaymentMethod } from "@/modules/stripe/payment-methods/us-bank-account";
 
-import { TransactionInitializeSessionEventData } from "./event-data-parser";
+import { type TransactionInitializeSessionEventData } from "./event-data-parser";
 
 export const resolvePaymentMethodFromEventData = (
   eventData: TransactionInitializeSessionEventData,
@@ -27,6 +28,8 @@ export const resolvePaymentMethodFromEventData = (
       return new USBankAccountPaymentMethod();
     case "sepa_debit":
       return new SepaDebitPaymentMethod();
+    case "link":
+      return new LinkPaymentMethod();
     default:
       assertUnreachable(eventData.paymentIntent);
   }

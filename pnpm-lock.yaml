@@ -1527,6 +1527,9 @@ importers:
       prisma:
         specifier: ^5.22.0
         version: 5.22.0
+      prisma-json-types-generator:
+        specifier: 4.1.1
+        version: 4.1.1(@prisma/client@5.22.0(prisma@5.22.0))(prisma@5.22.0)(typescript@5.8.2)
       tsx:
         specifier: 'catalog:'
         version: 4.19.3
@@ -15557,7 +15560,7 @@ snapshots:
       '@graphql-tools/utils': 10.0.13(graphql@16.11.0)
       globby: 11.1.0
       graphql: 16.11.0
-      tslib: 2.6.2
+      tslib: 2.8.1
       unixify: 1.0.0
     transitivePeerDependencies:
       - supports-color
@@ -15568,7 +15571,7 @@ snapshots:
       '@graphql-tools/utils': 10.0.13(graphql@16.7.1)
       globby: 11.1.0
       graphql: 16.7.1
-      tslib: 2.6.2
+      tslib: 2.8.1
       unixify: 1.0.0
     transitivePeerDependencies:
       - supports-color
@@ -23526,7 +23529,7 @@ snapshots:
     dependencies:
       color: 4.2.3
       detect-libc: 2.0.3
-      semver: 7.7.3
+      semver: 7.7.4
     optionalDependencies:
       '@img/sharp-darwin-arm64': 0.33.5
       '@img/sharp-darwin-x64': 0.33.5

@@ -798,11 +798,11 @@ importers:
         specifier: ^10.4.3
         version: 10.4.3
       jspdf:
-        specifier: 4.2.0
-        version: 4.2.0
+        specifier: 4.2.1
+        version: 4.2.1
       jspdf-autotable:
         specifier: 5.0.7
-        version: 5.0.7(jspdf@4.2.0)
+        version: 5.0.7(jspdf@4.2.1)
       modern-errors:
         specifier: 'catalog:'
         version: 7.0.1
@@ -7462,10 +7462,6 @@ packages:
     resolution: {integrity: sha512-RZNwNclF7+MS/8bDg70amg32dyeZGZxiDuQmZxKLAlQjr3jGyLx+4Kkk58UO7D2QdgFIQCovuSuZESne6RG6XQ==}
     engines: {node: '>= 6.0.0'}
 
-  agent-base@7.1.0:
-    resolution: {integrity: sha512-o/zjMZRhJxny7OyEF+Op8X+efiELC7k7yOjMzgfzVqOzXqkBkWI79YoTdOtsuWd5BWhAGAuOY/Xa6xpiaWXiNg==}
-    engines: {node: '>= 14'}
-
   agent-base@7.1.4:
     resolution: {integrity: sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ==}
     engines: {node: '>= 14'}
@@ -10036,8 +10032,8 @@ packages:
     peerDependencies:
       jspdf: ^2 || ^3 || ^4
 
-  jspdf@4.2.0:
-    resolution: {integrity: sha512-hR/hnRevAXXlrjeqU5oahOE+Ln9ORJUB5brLHHqH67A+RBQZuFr5GkbI9XQI8OUFSEezKegsi45QRpc4bGj75Q==}
+  jspdf@4.2.1:
+    resolution: {integrity: sha512-YyAXyvnmjTbR4bHQRLzex3CuINCDlQnBqoSYyjJwTP2x9jDLuKDzy7aKUl0hgx3uhcl7xzg32agn5vlie6HIlQ==}
 
   jsx-ast-utils@3.3.5:
     resolution: {integrity: sha512-ZZow9HBI5O6EPgSJLUb8n2NKgmVWTwCvHGwFuJlMjvLFqlGG6pjirPhtdsseaLZjSibD8eegzmYpUZwoIlj2cQ==}
@@ -12934,7 +12930,7 @@ snapshots:
       '@babel/core': 7.26.10
       '@babel/generator': 7.27.0
       '@babel/parser': 7.28.6
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       '@babel/traverse': 7.27.0
       '@babel/types': 7.28.6
       babel-preset-fbjs: 3.4.0(@babel/core@7.26.10)
@@ -16230,14 +16226,14 @@ snapshots:
 
   '@manypkg/find-root@1.1.0':
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       '@types/node': 12.20.55
       find-up: 4.1.0
       fs-extra: 8.1.0
 
   '@manypkg/get-packages@1.1.3':
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       '@changesets/types': 4.1.0
       '@manypkg/find-root': 1.1.0
       fs-extra: 8.1.0
@@ -16767,7 +16763,7 @@ snapshots:
 
   '@radix-ui/primitive@1.0.1':
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
 
   '@radix-ui/react-accordion@1.1.2(@types/react-dom@18.2.5)(@types/react@18.2.5)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)':
     dependencies:
@@ -16789,7 +16785,7 @@ snapshots:
 
   '@radix-ui/react-arrow@1.0.3(@types/react-dom@18.2.5)(@types/react@18.2.5)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)':
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       '@radix-ui/react-primitive': 1.0.3(@types/react-dom@18.2.5)(@types/react@18.2.5)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
       react: 18.2.0
       react-dom: 18.2.0(react@18.2.0)
@@ -16816,7 +16812,7 @@ snapshots:
 
   '@radix-ui/react-collapsible@1.0.3(@types/react-dom@18.2.5)(@types/react@18.2.5)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)':
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       '@radix-ui/primitive': 1.0.1
       '@radix-ui/react-compose-refs': 1.0.1(@types/react@18.2.5)(react@18.2.0)
       '@radix-ui/react-context': 1.0.1(@types/react@18.2.5)(react@18.2.0)
@@ -16833,7 +16829,7 @@ snapshots:
 
   '@radix-ui/react-collection@1.0.3(@types/react-dom@18.2.5)(@types/react@18.2.5)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)':
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       '@radix-ui/react-compose-refs': 1.0.1(@types/react@18.2.5)(react@18.2.0)
       '@radix-ui/react-context': 1.0.1(@types/react@18.2.5)(react@18.2.0)
       '@radix-ui/react-primitive': 1.0.3(@types/react-dom@18.2.5)(@types/react@18.2.5)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
@@ -16846,14 +16842,14 @@ snapshots:
 
   '@radix-ui/react-compose-refs@1.0.1(@types/react@18.2.5)(react@18.2.0)':
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       react: 18.2.0
     optionalDependencies:
       '@types/react': 18.2.5
 
   '@radix-ui/react-context@1.0.1(@types/react@18.2.5)(react@18.2.0)':
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       react: 18.2.0
     optionalDependencies:
       '@types/react': 18.2.5
@@ -16883,14 +16879,14 @@ snapshots:
 
   '@radix-ui/react-direction@1.0.1(@types/react@18.2.5)(react@18.2.0)':
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       react: 18.2.0
     optionalDependencies:
       '@types/react': 18.2.5
 
   '@radix-ui/react-dismissable-layer@1.0.5(@types/react-dom@18.2.5)(@types/react@18.2.5)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)':
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       '@radix-ui/primitive': 1.0.1
       '@radix-ui/react-compose-refs': 1.0.1(@types/react@18.2.5)(react@18.2.0)
       '@radix-ui/react-primitive': 1.0.3(@types/react-dom@18.2.5)(@types/react@18.2.5)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
@@ -16920,14 +16916,14 @@ snapshots:
 
   '@radix-ui/react-focus-guards@1.0.1(@types/react@18.2.5)(react@18.2.0)':
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       react: 18.2.0
     optionalDependencies:
       '@types/react': 18.2.5
 
   '@radix-ui/react-focus-scope@1.0.4(@types/react-dom@18.2.5)(@types/react@18.2.5)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)':
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       '@radix-ui/react-compose-refs': 1.0.1(@types/react@18.2.5)(react@18.2.0)
       '@radix-ui/react-primitive': 1.0.3(@types/react-dom@18.2.5)(@types/react@18.2.5)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
       '@radix-ui/react-use-callback-ref': 1.0.1(@types/react@18.2.5)(react@18.2.0)
@@ -16939,7 +16935,7 @@ snapshots:
 
   '@radix-ui/react-id@1.0.1(@types/react@18.2.5)(react@18.2.0)':
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       '@radix-ui/react-use-layout-effect': 1.0.1(@types/react@18.2.5)(react@18.2.0)
       react: 18.2.0
     optionalDependencies:
@@ -16947,7 +16943,7 @@ snapshots:
 
   '@radix-ui/react-menu@2.0.6(@types/react-dom@18.2.5)(@types/react@18.2.5)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)':
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       '@radix-ui/primitive': 1.0.1
       '@radix-ui/react-collection': 1.0.3(@types/react-dom@18.2.5)(@types/react@18.2.5)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
       '@radix-ui/react-compose-refs': 1.0.1(@types/react@18.2.5)(react@18.2.0)
@@ -16998,7 +16994,7 @@ snapshots:
 
   '@radix-ui/react-popper@1.1.3(@types/react-dom@18.2.5)(@types/react@18.2.5)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)':
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       '@floating-ui/react-dom': 2.0.4(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
       '@radix-ui/react-arrow': 1.0.3(@types/react-dom@18.2.5)(@types/react@18.2.5)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
       '@radix-ui/react-compose-refs': 1.0.1(@types/react@18.2.5)(react@18.2.0)
@@ -17027,7 +17023,7 @@ snapshots:
 
   '@radix-ui/react-presence@1.0.1(@types/react-dom@18.2.5)(@types/react@18.2.5)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)':
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       '@radix-ui/react-compose-refs': 1.0.1(@types/react@18.2.5)(react@18.2.0)
       '@radix-ui/react-use-layout-effect': 1.0.1(@types/react@18.2.5)(react@18.2.0)
       react: 18.2.0
@@ -17038,7 +17034,7 @@ snapshots:
 
   '@radix-ui/react-primitive@1.0.3(@types/react-dom@18.2.5)(@types/react@18.2.5)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)':
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       '@radix-ui/react-slot': 1.0.2(@types/react@18.2.5)(react@18.2.0)
       react: 18.2.0
       react-dom: 18.2.0(react@18.2.0)
@@ -17067,7 +17063,7 @@ snapshots:
 
   '@radix-ui/react-roving-focus@1.0.4(@types/react-dom@18.2.5)(@types/react@18.2.5)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)':
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       '@radix-ui/primitive': 1.0.1
       '@radix-ui/react-collection': 1.0.3(@types/react-dom@18.2.5)(@types/react@18.2.5)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
       '@radix-ui/react-compose-refs': 1.0.1(@types/react@18.2.5)(react@18.2.0)
@@ -17085,7 +17081,7 @@ snapshots:
 
   '@radix-ui/react-slot@1.0.2(@types/react@18.2.5)(react@18.2.0)':
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       '@radix-ui/react-compose-refs': 1.0.1(@types/react@18.2.5)(react@18.2.0)
       react: 18.2.0
     optionalDependencies:
@@ -17126,14 +17122,14 @@ snapshots:
 
   '@radix-ui/react-use-callback-ref@1.0.1(@types/react@18.2.5)(react@18.2.0)':
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       react: 18.2.0
     optionalDependencies:
       '@types/react': 18.2.5
 
   '@radix-ui/react-use-controllable-state@1.0.1(@types/react@18.2.5)(react@18.2.0)':
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       '@radix-ui/react-use-callback-ref': 1.0.1(@types/react@18.2.5)(react@18.2.0)
       react: 18.2.0
     optionalDependencies:
@@ -17141,7 +17137,7 @@ snapshots:
 
   '@radix-ui/react-use-escape-keydown@1.0.3(@types/react@18.2.5)(react@18.2.0)':
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       '@radix-ui/react-use-callback-ref': 1.0.1(@types/react@18.2.5)(react@18.2.0)
       react: 18.2.0
     optionalDependencies:
@@ -17149,21 +17145,21 @@ snapshots:
 
   '@radix-ui/react-use-layout-effect@1.0.1(@types/react@18.2.5)(react@18.2.0)':
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       react: 18.2.0
     optionalDependencies:
       '@types/react': 18.2.5
 
   '@radix-ui/react-use-previous@1.0.1(@types/react@18.2.5)(react@18.2.0)':
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       react: 18.2.0
     optionalDependencies:
       '@types/react': 18.2.5
 
   '@radix-ui/react-use-rect@1.0.1(@types/react@18.2.5)(react@18.2.0)':
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       '@radix-ui/rect': 1.0.1
       react: 18.2.0
     optionalDependencies:
@@ -17171,7 +17167,7 @@ snapshots:
 
   '@radix-ui/react-use-size@1.0.1(@types/react@18.2.5)(react@18.2.0)':
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       '@radix-ui/react-use-layout-effect': 1.0.1(@types/react@18.2.5)(react@18.2.0)
       react: 18.2.0
     optionalDependencies:
@@ -17179,7 +17175,7 @@ snapshots:
 
   '@radix-ui/react-visually-hidden@1.0.3(@types/react-dom@18.2.5)(@types/react@18.2.5)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)':
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       '@radix-ui/react-primitive': 1.0.3(@types/react-dom@18.2.5)(@types/react@18.2.5)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
       react: 18.2.0
       react-dom: 18.2.0(react@18.2.0)
@@ -17189,7 +17185,7 @@ snapshots:
 
   '@radix-ui/rect@1.0.1':
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
 
   '@redis/bloom@1.2.0(@redis/client@1.6.1)':
     dependencies:
@@ -18682,12 +18678,6 @@ snapshots:
   acorn@8.14.1: {}
 
   agent-base@6.0.2:
-    dependencies:
-      debug: 4.4.3
-    transitivePeerDependencies:
-      - supports-color
-
-  agent-base@7.1.0:
     dependencies:
       debug: 4.4.3
     transitivePeerDependencies:
@@ -21186,7 +21176,7 @@ snapshots:
 
   http-proxy-agent@7.0.2:
     dependencies:
-      agent-base: 7.1.0
+      agent-base: 7.1.4
       debug: 4.4.3
     transitivePeerDependencies:
       - supports-color
@@ -21200,7 +21190,7 @@ snapshots:
 
   https-proxy-agent@7.0.4:
     dependencies:
-      agent-base: 7.1.0
+      agent-base: 7.1.4
       debug: 4.4.3
     transitivePeerDependencies:
       - supports-color
@@ -21705,11 +21695,11 @@ snapshots:
 
   jsonify@0.0.1: {}
 
-  jspdf-autotable@5.0.7(jspdf@4.2.0):
+  jspdf-autotable@5.0.7(jspdf@4.2.1):
     dependencies:
-      jspdf: 4.2.0
+      jspdf: 4.2.1
 
-  jspdf@4.2.0:
+  jspdf@4.2.1:
     dependencies:
       '@babel/runtime': 7.28.6
       fast-png: 6.4.0
@@ -22097,7 +22087,7 @@ snapshots:
 
   mjml-accordion@4.15.3:
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       lodash: 4.17.21
       mjml-core: 4.15.3
     transitivePeerDependencies:
@@ -22105,7 +22095,7 @@ snapshots:
 
   mjml-body@4.15.3:
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       lodash: 4.17.21
       mjml-core: 4.15.3
     transitivePeerDependencies:
@@ -22113,7 +22103,7 @@ snapshots:
 
   mjml-button@4.15.3:
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       lodash: 4.17.21
       mjml-core: 4.15.3
     transitivePeerDependencies:
@@ -22121,7 +22111,7 @@ snapshots:
 
   mjml-carousel@4.15.3:
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       lodash: 4.17.21
       mjml-core: 4.15.3
     transitivePeerDependencies:
@@ -22129,7 +22119,7 @@ snapshots:
 
   mjml-cli@4.15.3:
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       chokidar: 3.5.3
       glob: 10.4.5
       html-minifier: 4.0.0
@@ -22146,7 +22136,7 @@ snapshots:
 
   mjml-column@4.15.3:
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       lodash: 4.17.21
       mjml-core: 4.15.3
     transitivePeerDependencies:
@@ -22154,7 +22144,7 @@ snapshots:
 
   mjml-core@4.15.3:
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       cheerio: 1.0.0-rc.12
       detect-node: 2.1.0
       html-minifier: 4.0.0
@@ -22169,7 +22159,7 @@ snapshots:
 
   mjml-divider@4.15.3:
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       lodash: 4.17.21
       mjml-core: 4.15.3
     transitivePeerDependencies:
@@ -22177,7 +22167,7 @@ snapshots:
 
   mjml-group@4.15.3:
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       lodash: 4.17.21
       mjml-core: 4.15.3
     transitivePeerDependencies:
@@ -22185,7 +22175,7 @@ snapshots:
 
   mjml-head-attributes@4.15.3:
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       lodash: 4.17.21
       mjml-core: 4.15.3
     transitivePeerDependencies:
@@ -22193,7 +22183,7 @@ snapshots:
 
   mjml-head-breakpoint@4.15.3:
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       lodash: 4.17.21
       mjml-core: 4.15.3
     transitivePeerDependencies:
@@ -22201,7 +22191,7 @@ snapshots:
 
   mjml-head-font@4.15.3:
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       lodash: 4.17.21
       mjml-core: 4.15.3
     transitivePeerDependencies:
@@ -22209,7 +22199,7 @@ snapshots:
 
   mjml-head-html-attributes@4.15.3:
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       lodash: 4.17.21
       mjml-core: 4.15.3
     transitivePeerDependencies:
@@ -22217,7 +22207,7 @@ snapshots:
 
   mjml-head-preview@4.15.3:
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       lodash: 4.17.21
       mjml-core: 4.15.3
     transitivePeerDependencies:
@@ -22225,7 +22215,7 @@ snapshots:
 
   mjml-head-style@4.15.3:
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       lodash: 4.17.21
       mjml-core: 4.15.3
     transitivePeerDependencies:
@@ -22233,7 +22223,7 @@ snapshots:
 
   mjml-head-title@4.15.3:
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       lodash: 4.17.21
       mjml-core: 4.15.3
     transitivePeerDependencies:
@@ -22241,7 +22231,7 @@ snapshots:
 
   mjml-head@4.15.3:
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       lodash: 4.17.21
       mjml-core: 4.15.3
     transitivePeerDependencies:
@@ -22249,7 +22239,7 @@ snapshots:
 
   mjml-hero@4.15.3:
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       lodash: 4.17.21
       mjml-core: 4.15.3
     transitivePeerDependencies:
@@ -22257,7 +22247,7 @@ snapshots:
 
   mjml-image@4.15.3:
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       lodash: 4.17.21
       mjml-core: 4.15.3
     transitivePeerDependencies:
@@ -22265,7 +22255,7 @@ snapshots:
 
   mjml-migrate@4.15.3:
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       js-beautify: 1.14.8
       lodash: 4.17.21
       mjml-core: 4.15.3
@@ -22276,7 +22266,7 @@ snapshots:
 
   mjml-navbar@4.15.3:
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       lodash: 4.17.21
       mjml-core: 4.15.3
     transitivePeerDependencies:
@@ -22284,14 +22274,14 @@ snapshots:
 
   mjml-parser-xml@4.15.3:
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       detect-node: 2.1.0
       htmlparser2: 9.1.0
       lodash: 4.17.21
 
   mjml-preset-core@4.15.3:
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       mjml-accordion: 4.15.3
       mjml-body: 4.15.3
       mjml-button: 4.15.3
@@ -22322,7 +22312,7 @@ snapshots:
 
   mjml-raw@4.15.3:
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       lodash: 4.17.21
       mjml-core: 4.15.3
     transitivePeerDependencies:
@@ -22330,7 +22320,7 @@ snapshots:
 
   mjml-section@4.15.3:
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       lodash: 4.17.21
       mjml-core: 4.15.3
     transitivePeerDependencies:
@@ -22338,7 +22328,7 @@ snapshots:
 
   mjml-social@4.15.3:
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       lodash: 4.17.21
       mjml-core: 4.15.3
     transitivePeerDependencies:
@@ -22346,7 +22336,7 @@ snapshots:
 
   mjml-spacer@4.15.3:
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       lodash: 4.17.21
       mjml-core: 4.15.3
     transitivePeerDependencies:
@@ -22354,7 +22344,7 @@ snapshots:
 
   mjml-table@4.15.3:
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       lodash: 4.17.21
       mjml-core: 4.15.3
     transitivePeerDependencies:
@@ -22362,7 +22352,7 @@ snapshots:
 
   mjml-text@4.15.3:
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       lodash: 4.17.21
       mjml-core: 4.15.3
     transitivePeerDependencies:
@@ -22370,11 +22360,11 @@ snapshots:
 
   mjml-validator@4.15.3:
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
 
   mjml-wrapper@4.15.3:
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       lodash: 4.17.21
       mjml-core: 4.15.3
       mjml-section: 4.15.3
@@ -23274,7 +23264,7 @@ snapshots:
 
   relay-runtime@12.0.0:
     dependencies:
-      '@babel/runtime': 7.25.6
+      '@babel/runtime': 7.28.6
       fbjs: 3.0.5
       invariant: 2.2.4
     transitivePeerDependencies:

@@ -202,6 +202,7 @@ catalogs:
 overrides:
   fast-xml-parser@>=4.0.0 <4.5.4: 4.5.4
   form-data@>=4.0.0 <4.0.4: 4.0.4
+  semver@>=7.5.0 <7.5.2: 7.5.2
 
 importers:
 
@@ -1068,7 +1069,7 @@ importers:
         version: 8.4.14
       pretty-quick:
         specifier: ^3.1.3
-        version: 3.1.3(prettier@3.0.3)
+        version: 3.1.3(prettier@3.5.3)
       tsx:
         specifier: 'catalog:'
         version: 4.19.3
@@ -3132,8 +3133,8 @@ importers:
         specifier: 'catalog:'
         version: 9.23.0(jiti@2.4.2)
       semver:
-        specifier: 7.5.1
-        version: 7.5.1
+        specifier: 7.5.2
+        version: 7.5.2
       urql:
         specifier: 'catalog:'
         version: 4.0.4(graphql@16.11.0)(react@18.2.0)
@@ -3295,8 +3296,8 @@ importers:
         specifier: 'catalog:'
         version: 15.2.6(@babel/core@7.26.10)(@opentelemetry/api@1.9.0)(@playwright/test@1.52.0)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
       semver:
-        specifier: 7.5.1
-        version: 7.5.1
+        specifier: 7.5.2
+        version: 7.5.2
     devDependencies:
       '@graphql-codegen/cli':
         specifier: 'catalog:'
@@ -11437,13 +11438,8 @@ packages:
     resolution: {integrity: sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA==}
     hasBin: true
 
-  semver@7.5.1:
-    resolution: {integrity: sha512-Wvss5ivl8TMRZXXESstBA4uR5iXgEN/VC5/sOcuXdVLzcdkz4HWetIoRfG5gb5X+ij/G9rw9YoGn3QoQ8OCSpw==}
-    engines: {node: '>=10'}
-    hasBin: true
-
-  semver@7.6.2:
-    resolution: {integrity: sha512-FNAIBWCx9qcRhoHcgcJ0gvU7SN1lYU2ZXuSfl04bSC5OpvDHFyJCjdNHomPXxjQlCBU67YW64PzY7/VIEH7F2w==}
+  semver@7.5.2:
+    resolution: {integrity: sha512-SoftuTROv/cRjCze/scjGyiDtcUyxw1rgYQSZY7XTmtR5hX+dm76iDbTH8TkLPHCQmlbQVSSbNZCPM2hb0knnQ==}
     engines: {node: '>=10'}
     hasBin: true
 
@@ -14526,7 +14522,7 @@ snapshots:
       p-limit: 2.3.0
       preferred-pm: 3.0.3
       resolve-from: 5.0.0
-      semver: 7.6.2
+      semver: 7.7.1
       spawndamnit: 2.0.0
       term-size: 2.2.1
       tty-table: 4.2.1
@@ -22938,7 +22934,7 @@ snapshots:
     dependencies:
       parse-ms: 4.0.0
 
-  pretty-quick@3.1.3(prettier@3.0.3):
+  pretty-quick@3.1.3(prettier@3.5.3):
     dependencies:
       chalk: 3.0.0
       execa: 4.1.0
@@ -22946,7 +22942,7 @@ snapshots:
       ignore: 5.2.4
       mri: 1.2.0
       multimatch: 4.0.0
-      prettier: 3.0.3
+      prettier: 3.5.3
 
   prisma-json-types-generator@3.0.4(prisma@5.22.0)(typescript@5.8.2):
     dependencies:
@@ -23390,11 +23386,9 @@ snapshots:
 
   semver@6.3.1: {}
 
-  semver@7.5.1:
+  semver@7.5.2:
     dependencies:
       lru-cache: 6.0.0
-
-  semver@7.6.2: {}
 
   semver@7.7.1: {}
 
